@@ -1,34 +1,38 @@
 "use server";
 
-import { cookies } from "next/headers";
+import { randomUUID } from "node:crypto";
 
+import { currentUserId } from "./current-user";
 import { getModel, parseSettings } from "./catalog";
 import type { GenerationPlane } from "./catalog/types";
 import {
-  MissingCredentialsError,
-  PLATFORM_KEY_COOKIE,
-  PLATFORM_KEY_COOKIE_OPTIONS,
-  decodeCredentials,
-  encodeCredentials,
-  parseCredentialInput,
-} from "./credentials";
-import { createPlatformClient } from "./platform";
+  getGcloudCredentials,
+  getGcloudStatus,
+  saveMediaBatchWithFinder,
+  saveMediaWithFinder,
+} from "./gcloud-auth";
 import type { StatusResult } from "./platform";
-import { toPlatform } from "./to-platform";
-
-export async function savePlatformCredentials(data: unknown) {
-  const { apiKey } = parseCredentialInput(data);
-  const jar = await cookies();
-  jar.set(PLATFORM_KEY_COOKIE, encodeCredentials(apiKey), PLATFORM_KEY_COOKIE_OPTIONS);
-}
-
-export async function clearPlatformCredentials() {
-  const jar = await cookies();
-  jar.set(PLATFORM_KEY_COOKIE, "", { ...PLATFORM_KEY_COOKIE_OPTIONS, maxAge: 0 });
-}
+import { createCostSession, updateCostSession } from "./session-store";
+import { getVertexStatus, submitVertexGeneration } from "./vertex";
 
 export async function hasPlatformCredentials() {
-  return (await readStoredCredentials()) !== null;
+  return (await getGcloudStatus()).available;
+}
+
+export async function getPlatformStatus() {
+  return getGcloudStatus();
+}
+
+export async function saveGeneratedMedia(data: unknown) {
+  await currentUserId();
+  const file = parseSaveFile(data);
+  return saveMediaWithFinder(file.sourcePath, file.name);
+}
+
+export async function saveGeneratedMediaBatch(data: unknown) {
+  await currentUserId();
+  if (!Array.isArray(data) || data.length === 0 || data.length > 100) throw new Error("Invalid file selection");
+  return saveMediaBatchWithFinder(data.map(parseSaveFile));
 }
 
 export async function submitGeneration(plane: GenerationPlane) {
@@ -37,8 +41,20 @@ export async function submitGeneration(plane: GenerationPlane) {
     ...plane,
     settings: parseSettings(model, plane.settings),
   };
-  const { path, body } = toPlatform(parsed);
-  return createPlatformClient(await readCredentials()).submit(path, body);
+  const userId = await currentUserId();
+  const requestId = randomUUID();
+  await createCostSession(userId, parsed, requestId, model.label);
+  try {
+    const credentials = await getGcloudCredentials();
+    return await submitVertexGeneration(parsed, credentials.accessToken, credentials.projectId, userId, requestId);
+  } catch (caught) {
+    await updateCostSession(userId, {
+      status: "failed",
+      requestId,
+      error: caught instanceof Error ? caught.message : String(caught),
+    });
+    throw caught;
+  }
 }
 
 /** Every request in flight, answered in one round trip. Next dispatches server
@@ -47,29 +63,21 @@ export async function submitGeneration(plane: GenerationPlane) {
     genuinely parallel. */
 export async function getGenerationStatuses(data: unknown): Promise<StatusResult[]> {
   const requestIds = parseRequestIds(data);
-  const client = createPlatformClient(await readCredentials());
+  const credentials = await getGcloudCredentials();
+  const userId = await currentUserId();
   return Promise.all(
     requestIds.map(async (requestId): Promise<StatusResult> => {
       try {
-        return { requestId, status: await client.status(requestId) };
+        const status = await getVertexStatus(requestId, credentials.accessToken, credentials.projectId, userId);
+        if (status.status === "completed" || status.status === "failed") {
+          await updateCostSession(userId, status);
+        }
+        return { requestId, status };
       } catch (caught) {
         return { requestId, error: caught instanceof Error ? caught.message : String(caught) };
       }
     }),
   );
-}
-
-async function readStoredCredentials() {
-  const jar = await cookies();
-  return decodeCredentials(jar.get(PLATFORM_KEY_COOKIE)?.value);
-}
-
-async function readCredentials() {
-  const stored = await readStoredCredentials();
-  if (!stored) throw new MissingCredentialsError();
-  const baseUrl = process.env.HF_API_BASE_URL;
-  if (!baseUrl) throw new Error("Missing HF_API_BASE_URL");
-  return { ...stored, baseUrl };
 }
 
 function parseRequestIds(data: unknown): string[] {
@@ -87,4 +95,17 @@ function parseRequestIds(data: unknown): string[] {
 function asObject(data: unknown, message: string): Record<string, unknown> {
   if (data === null || typeof data !== "object" || Array.isArray(data)) throw new Error(message);
   return data as Record<string, unknown>;
+}
+
+function parseSaveFile(data: unknown) {
+  const payload = asObject(data, "Invalid file");
+  const sourcePath = payload.sourcePath;
+  const name = payload.name;
+  if (typeof sourcePath !== "string" || !/^\/api\/media\/[a-f0-9-]+\.[a-z0-9]+$/i.test(sourcePath)) {
+    throw new Error("Invalid local media path");
+  }
+  if (typeof name !== "string" || !name || name.length > 180 || /[\x00/\\:]/.test(name)) {
+    throw new Error("Invalid file name");
+  }
+  return { sourcePath, name };
 }

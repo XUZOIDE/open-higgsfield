@@ -1,9 +1,12 @@
 allowBuilds:
   esbuild: true
   lightningcss: true
+  sharp: true
+  workerd: true
 onlyBuiltDependencies:
   - esbuild
   - sharp
+  - workerd
 # The committed lockfile pins these official packages at versions published
 # hours before pnpm's minimum-release-age cutoff; exempt just those names.
 minimumReleaseAgeExclude:
@@ -11,3 +14,5 @@ minimumReleaseAgeExclude:
   - rollup
   - next
   - "@next/*"
+overrides:
+  esbuild: 0.28.1

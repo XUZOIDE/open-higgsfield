@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import Link from "next/link";
 
 import { VIEWS, VIEW_LABELS, type GalleryView } from "./data";
 import { AssetsIcon, HeartIcon, ImageIcon, KeyIcon, VideoIcon } from "./icons";
@@ -120,21 +121,23 @@ export function Topbar({
         </div>
       </div>
 
-      {/* Generations run on the visitor's own platform key, so this both states
-          whether one is held and opens the modal that sets it — and its lamp is
-          the studio's liveness, the one place accent moves. */}
+      {/* Tokens remain in the local gcloud bridge; this control shows only the
+          active account/project and whether the bridge is available. */}
       <div className="ohf-bar ohf-enter-1">
+        <Link className="ohf-costs" href="/costs" aria-label="Usage and costs" title="Usage and costs">
+          R$
+        </Link>
         <button
           type="button"
           className="ohf-key"
           data-busy={busy}
           data-ready={keyConfigured}
           onClick={onKeys}
-          aria-label={keyConfigured ? "Edit platform key" : "Add platform key"}
-          title={keyConfigured ? "Edit platform key" : "Add platform key"}
+          aria-label="View local Google Cloud connection"
+          title="View local Google Cloud connection"
         >
           <KeyIcon />
-          <span className="ohf-key-text">{keyConfigured ? "Your key" : "Add key"}</span>
+          <span className="ohf-key-text">{keyConfigured ? "Local Google" : "Check gcloud"}</span>
           <span className="ohf-lamp" />
         </button>
       </div>

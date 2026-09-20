@@ -1,16 +1,10 @@
-/* One source of truth for the site's identity and its canonical origin.
-   Server-only by intent: VERCEL_PROJECT_PRODUCTION_URL is not exposed to the
-   browser, so importing SITE_URL into a client component would resolve
-   differently on each side. Keep this module out of "use client" files. */
+/* One source of truth for the local app identity and loopback origin. */
 
 function resolveOrigin(): string {
   const explicit = process.env.NEXT_PUBLIC_SITE_URL?.trim();
   if (explicit) return explicit.replace(/\/+$/, "");
 
-  const vercel = process.env.VERCEL_PROJECT_PRODUCTION_URL?.trim();
-  if (vercel) return `https://${vercel.replace(/^https?:\/\//, "").replace(/\/+$/, "")}`;
-
-  return "http://localhost:3000";
+  return "http://127.0.0.1:5173";
 }
 
 export const SITE_URL = resolveOrigin();

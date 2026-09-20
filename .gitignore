@@ -9,6 +9,10 @@ dist
 !.env.example
 .vercel
 tsconfig.tsbuildinfo
+.wrangler
+.sites-runtime
+.local-data
+.vinext
 
 .env*
 .idea

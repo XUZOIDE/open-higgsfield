@@ -1,6 +1,6 @@
 /* Builds every raster brand asset from the one mark geometry.
 
-   The mark is authored once as SVG (src/app/icon.svg for the favicon,
+   The mark is authored once as SVG (app/icon.svg for the favicon,
    src/components/OpenHiggsfieldMark.tsx for the interface). Apple, the web app
    manifest and Open Graph all need rasters, so this script draws the same
    32-unit field in a headless Chromium and screenshots it at each size.
@@ -22,7 +22,7 @@ const PLATE = "#0e1011";
 const ACCENT = "#6fe3c0";
 const INK = "#c2c9c8";
 
-/** The two brackets on a 32-unit field. Keep in step with src/app/icon.svg. */
+/** The two brackets on a 32-unit field. Keep in step with app/icon.svg. */
 function brackets({ stroke = 2.5, accent = ACCENT, ink = INK } = {}) {
   return `<g fill="none" stroke-width="${stroke}" stroke-linecap="round" stroke-linejoin="round">
     <path d="M19.5 6.5H8.9A2.4 2.4 0 0 0 6.5 8.9V17" stroke="${accent}"/>
@@ -124,7 +124,7 @@ shoot(join(ROOT, "public/icon-192.png"), shell(roundedPlate(192)), 192, 192, {
 });
 // Maskable keeps the mark inside the 80%-diameter safe circle.
 shoot(join(ROOT, "public/icon-maskable-512.png"), shell(bleedPlate(512, 0.82)), 512, 512);
-shoot(join(ROOT, "src/app/apple-icon.png"), shell(bleedPlate(180, 1)), 180, 180);
+shoot(join(ROOT, "app/apple-icon.png"), shell(bleedPlate(180, 1)), 180, 180);
 
 /* ---------- open graph card ----------
    No stand-in tiles standing in for generated work we do not have. The only

@@ -15,6 +15,7 @@
     "moduleResolution": "bundler",
     "resolveJsonModule": true,
     "isolatedModules": true,
+    "allowImportingTsExtensions": true,
     "jsx": "react-jsx",
     "incremental": true,
     "noUnusedLocals": true,
@@ -23,6 +24,10 @@
       {
         "name": "next"
       }
+    ],
+    "types": [
+      "node",
+      "@cloudflare/workers-types"
     ],
     "paths": {
       "@/*": [

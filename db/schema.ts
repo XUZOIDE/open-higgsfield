@@ -1,0 +1,27 @@
+import { index, integer, sqliteTable, text } from "drizzle-orm/sqlite-core";
+
+export const generationSessions = sqliteTable("generation_sessions", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  userId: text("user_id").notNull(),
+  requestId: text("request_id").notNull().unique(),
+  dayLocal: text("day_local").notNull(),
+  title: text("title").notNull(),
+  modelId: text("model_id").notNull(),
+  modelLabel: text("model_label").notNull(),
+  surface: text("surface").notNull(),
+  status: text("status").notNull(),
+  createdAt: text("created_at").notNull(),
+  completedAt: text("completed_at"),
+  inputTokens: integer("input_tokens").notNull().default(0),
+  outputTokens: integer("output_tokens").notNull().default(0),
+  totalTokens: integer("total_tokens").notNull().default(0),
+  billableUnits: integer("billable_units").notNull().default(0),
+  unitLabel: text("unit_label").notNull().default("tokens"),
+  usdMicros: integer("usd_micros").notNull().default(0),
+  brlMicros: integer("brl_micros").notNull().default(0),
+  brlPerUsdMicros: integer("brl_per_usd_micros").notNull().default(0),
+  pricingDate: text("pricing_date"),
+  resultUrl: text("result_url"),
+  settingsJson: text("settings_json").notNull(),
+  error: text("error"),
+}, (table) => [index("idx_generation_sessions_user_day").on(table.userId, table.dayLocal)]);

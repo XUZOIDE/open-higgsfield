@@ -2,24 +2,43 @@
   "name": "openhiggsfield-ai",
   "private": true,
   "type": "module",
+  "engines": {
+    "node": ">=22.13.0"
+  },
   "scripts": {
-    "dev": "next dev --port 3000",
-    "build": "next build",
-    "start": "next start",
+    "dev": "node scripts/run-framework.mjs dev",
+    "build": "node scripts/run-framework.mjs build",
+    "start": "node scripts/run-local-start.mjs",
+    "db:generate": "drizzle-kit generate",
     "brand": "node scripts/build-brand-assets.mjs"
   },
   "dependencies": {
     "@tanstack/react-virtual": "^3.14.10",
-    "@vercel/blob": "^2.8.0",
-    "next": "^16.0.0",
-    "react": "^19.2.0",
-    "react-dom": "^19.2.0",
+    "drizzle-orm": "0.45.2",
+    "next": "16.3.5",
+    "react": "19.3.0",
+    "react-dom": "19.3.0",
     "zustand": "^5.0.15"
   },
   "devDependencies": {
-    "@types/node": "^22.10.2",
-    "@types/react": "^19.2.0",
-    "@types/react-dom": "^19.2.0",
-    "typescript": "^5.9.2"
+    "@cloudflare/vite-plugin": "1.56.0",
+    "@cloudflare/workers-types": "5.20260918.1",
+    "@types/node": "22.19.19",
+    "@types/react": "19.2.14",
+    "@types/react-dom": "19.2.3",
+    "@vitejs/plugin-react": "6.1.1",
+    "@vitejs/plugin-rsc": "0.5.35",
+    "drizzle-kit": "0.31.10",
+    "react-server-dom-webpack": "19.3.0",
+    "typescript": "5.9.3",
+    "vinext": "1.0.0-beta.10",
+    "vite": "8.3.0",
+    "wrangler": "4.135.0"
+  },
+  "overrides": {
+    "esbuild": "0.28.1",
+    "miniflare": {
+      "sharp": "0.35.4"
+    }
   }
 }
