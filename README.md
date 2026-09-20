@@ -44,9 +44,11 @@ selected files there.
 ## Production-style local run
 
 ```bash
-pnpm build
 pnpm start
 ```
+
+`pnpm start` rebuilds the app before starting the local server so the server
+bundle and its CSS/JavaScript assets always stay in sync.
 
 ## Validation
 

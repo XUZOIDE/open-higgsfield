@@ -1,7 +1,16 @@
-import { spawn } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 
 import { startGcloudAuthServer } from "./gcloud-auth-server.mjs";
+
+const frameworkRunner = fileURLToPath(new URL("./run-framework.mjs", import.meta.url));
+const build = spawnSync(process.execPath, [frameworkRunner, "build"], {
+  stdio: "inherit",
+  env: process.env,
+});
+
+if (build.error) throw build.error;
+if (build.status !== 0) process.exit(build.status ?? 1);
 
 const bridge = await startGcloudAuthServer();
 const wrangler = fileURLToPath(new URL("../node_modules/wrangler/bin/wrangler.js", import.meta.url));
