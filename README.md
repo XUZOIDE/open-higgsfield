@@ -1,45 +1,57 @@
-# OpenHiggsfield AI — private Google media studio
+# OpenHiggsfield AI — local Google media studio
 
-This fork runs as a private OpenAI Site and supports only:
+This fork runs only on `127.0.0.1` and supports:
 
 - Nano Banana 2 (`gemini-3.1-flash-image`)
 - Nano Banana Pro (`gemini-3-pro-image`)
 - Omni 1.1 Flash (`gemini-omni-1.1-flash-preview`)
 - Veo 3.1 (`veo-3.1-generate-001`)
 
-The Google Cloud project ID and API key are entered in the studio modal and
-stored in a Secure, HttpOnly, SameSite=Strict cookie. They are read only by
-server actions and are not written to the repository, D1, R2, logs, or browser
-JavaScript. Generation usage is sent to the project entered in the modal.
+It uses the Google account and project already selected in the local `gcloud`
+CLI. A loopback-only bridge obtains short-lived OAuth tokens, refreshes them
+after expiry, and never sends them to browser JavaScript. Closing the local app
+stops the bridge and discards its in-memory token cache.
 
-Generation jobs and media are stored in Sites R2 under a per-user namespace.
-Usage sessions are stored in Sites D1 and queried by the authenticated OpenAI
-user id. The `/costs` page groups estimated spend by São Paulo date and lets the
-owner inspect or delete each session and its stored result.
+Generation jobs, media and cost sessions are stored only on this computer in
+the ignored `.wrangler/state` directory. Browser gallery metadata is kept in
+IndexedDB. The `/costs` page groups estimated spend by São Paulo date and lets
+you inspect or delete each session and its stored result.
 
 Cost figures are estimates based on model usage returned by Google, the pricing
-snapshot embedded in `src/generation/pricing.ts`, and the latest available PTAX
-sell rate. They are not a Google Cloud invoice. Veo is billed by generated
-seconds and therefore reports zero tokens plus its billable seconds.
+snapshot in `src/generation/pricing.ts`, and the latest available PTAX sell
+rate. They are not a Google Cloud invoice. Veo is billed by generated seconds
+and therefore reports zero tokens plus its billable seconds.
 
-## Local development
+## Run locally
 
-Use Node 22.13 or newer:
+Use Node 22.13 or newer, pnpm, and the Google Cloud CLI:
 
 ```bash
+gcloud auth login
+gcloud config set project YOUR_PROJECT_ID
 pnpm install
-pnpm db:generate
 pnpm dev
 ```
 
-Apply `drizzle/*.sql` to the local D1 binding before opening `/costs`. Production
-migrations are packaged with each Sites version.
+Open <http://127.0.0.1:5173>. The Google button in the top bar shows the active
+account and project. To switch billing projects, stop the app, run
+`gcloud config set project OTHER_PROJECT_ID`, and start it again.
+
+The first time you save one result, Chrome opens the native macOS Finder save
+sheet. Saving a multi-selection opens one Finder folder chooser and writes the
+selected files there.
+
+## Production-style local run
+
+```bash
+pnpm build
+pnpm start
+```
 
 ## Validation
 
 ```bash
 pnpm audit
-pnpm peers check
 pnpm exec tsc --noEmit
 pnpm build
 ```

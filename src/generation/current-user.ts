@@ -2,11 +2,18 @@ import "server-only";
 
 import { headers } from "next/headers";
 
-/** Stable identity supplied by Sites after ChatGPT sign-in. */
+/** The local build deliberately refuses non-loopback requests. */
 export async function currentUserId(): Promise<string> {
   const requestHeaders = await headers();
-  const userId = requestHeaders.get("oai-authenticated-user-id");
-  if (userId) return userId;
-  if (process.env.NODE_ENV === "development") return "local-preview";
-  throw new Error("Authenticated Site access is required");
+  const rawHost = requestHeaders.get("host") || "";
+  let host = "";
+  try {
+    host = new URL(`http://${rawHost}`).hostname.replace(/^\[|\]$/g, "").toLowerCase();
+  } catch {
+    throw new Error("OpenHiggsfield requires a valid local host");
+  }
+  if (!["localhost", "127.0.0.1", "::1"].includes(host)) {
+    throw new Error("OpenHiggsfield is configured for local access only");
+  }
+  return "local-user";
 }

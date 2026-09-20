@@ -121,8 +121,8 @@ export function Topbar({
         </div>
       </div>
 
-      {/* The key stays in an httpOnly cookie; this control opens the modal and
-          reports whether the server has one available for generation. */}
+      {/* Tokens remain in the local gcloud bridge; this control shows only the
+          active account/project and whether the bridge is available. */}
       <div className="ohf-bar ohf-enter-1">
         <Link className="ohf-costs" href="/costs" aria-label="Usage and costs" title="Usage and costs">
           R$
@@ -133,11 +133,11 @@ export function Topbar({
           data-busy={busy}
           data-ready={keyConfigured}
           onClick={onKeys}
-          aria-label={keyConfigured ? "Edit Google Cloud connection" : "Add Google Cloud connection"}
-          title={keyConfigured ? "Edit Google Cloud connection" : "Add Google Cloud connection"}
+          aria-label="View local Google Cloud connection"
+          title="View local Google Cloud connection"
         >
           <KeyIcon />
-          <span className="ohf-key-text">{keyConfigured ? "Google access" : "Add Google access"}</span>
+          <span className="ohf-key-text">{keyConfigured ? "Local Google" : "Check gcloud"}</span>
           <span className="ohf-lamp" />
         </button>
       </div>

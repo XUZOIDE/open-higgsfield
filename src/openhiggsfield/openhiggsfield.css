@@ -2434,6 +2434,15 @@
 .ohf-input:focus-visible {
   outline: none;
 }
+.ohf-input[data-readonly] {
+  display: flex;
+  align-items: center;
+  min-height: 42px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  cursor: default;
+}
 
 .ohf-icon-btn {
   width: 34px;

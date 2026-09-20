@@ -1,65 +1,49 @@
 "use client";
 
-import { useEffect, useRef, useState, type FormEvent } from "react";
+import { useEffect, useRef, useState } from "react";
 
-import { clearPlatformCredentials, getPlatformProjectId, savePlatformCredentials } from "@/generation/actions";
+import { getPlatformStatus } from "@/generation/actions";
 
 import { CloseIcon } from "./icons";
 
-export function KeyModal({
-  configured,
-  onClose,
-  onSaved,
-  onCleared,
-}: {
-  configured: boolean;
+type GcloudStatus = {
+  available: boolean;
+  projectId: string | null;
+  account: string | null;
+  error: string | null;
+};
+
+const EMPTY: GcloudStatus = {
+  available: false,
+  projectId: null,
+  account: null,
+  error: null,
+};
+
+export function KeyModal({ onClose, onStatus }: {
   onClose: () => void;
-  onSaved: () => void;
-  onCleared: () => void;
+  onStatus: (ready: boolean) => void;
 }) {
   const ref = useRef<HTMLDialogElement>(null);
   const panelRef = useRef<HTMLDivElement>(null);
-  const [projectId, setProjectId] = useState("");
-  const [apiKey, setApiKey] = useState("");
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [status, setStatus] = useState<GcloudStatus>(EMPTY);
+  const [busy, setBusy] = useState(true);
+
+  async function refresh() {
+    setBusy(true);
+    const next = await getPlatformStatus();
+    setStatus(next);
+    onStatus(next.available);
+    setBusy(false);
+  }
 
   useEffect(() => {
     ref.current?.showModal();
     panelRef.current?.focus();
-    void getPlatformProjectId().then((storedProjectId) => {
-      if (storedProjectId) setProjectId(storedProjectId);
-    });
+    void refresh();
+    // Only load when this modal instance opens.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
-
-  async function onSubmit(event: FormEvent) {
-    event.preventDefault();
-    setBusy(true);
-    setError(null);
-    try {
-      await savePlatformCredentials({ project_id: projectId, api_key: apiKey });
-      onSaved();
-    } catch (caught) {
-      setError(caught instanceof Error ? caught.message : "Could not save the key");
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  async function onClear() {
-    setBusy(true);
-    setError(null);
-    try {
-      await clearPlatformCredentials();
-      setProjectId("");
-      setApiKey("");
-      onCleared();
-    } catch (caught) {
-      setError(caught instanceof Error ? caught.message : "Could not remove the key");
-    } finally {
-      setBusy(false);
-    }
-  }
 
   return (
     <dialog
@@ -74,12 +58,10 @@ export function KeyModal({
         <div className="ohf-keys-head">
           <div>
             <div id="ohf-keys-title" className="ohf-keys-title">
-              Google Cloud access
+              Local Google Cloud access
             </div>
             <p className="ohf-keys-copy">
-              {configured
-                ? "Your project ID and API key are stored in an httpOnly cookie. Enter a key to update this connection."
-                : "Enter the Google Cloud project that should receive usage, then paste an API key authorized for Vertex AI."}
+              The app uses the active gcloud login only while it is running. Access tokens stay on this machine and are refreshed automatically.
             </p>
           </div>
           <button type="button" className="ohf-icon-btn" aria-label="Close" onClick={onClose}>
@@ -87,51 +69,35 @@ export function KeyModal({
           </button>
         </div>
 
-        <form className="ohf-keys-form" onSubmit={(event) => void onSubmit(event)}>
-          <label className="ohf-field">
-            <div className="ohf-field-label">Google Cloud project ID</div>
-            <input
-              className="ohf-input ohf-input--mono"
-              name="project_id"
-              type="text"
-              autoComplete="off"
-              spellCheck={false}
-              placeholder="my-google-cloud-project"
-              value={projectId}
-              onChange={(event) => setProjectId(event.target.value.trim().toLowerCase())}
-            />
-          </label>
+        <div className="ohf-keys-form">
+          <div className="ohf-field">
+            <div className="ohf-field-label">Google Cloud project</div>
+            <div className="ohf-input ohf-input--mono" data-readonly>
+              {busy ? "Checking…" : status.projectId || "Not configured"}
+            </div>
+          </div>
+          <div className="ohf-field">
+            <div className="ohf-field-label">gcloud account</div>
+            <div className="ohf-input ohf-input--mono" data-readonly>
+              {busy ? "Checking…" : status.account || "Not authenticated"}
+            </div>
+          </div>
 
-          <label className="ohf-field">
-            <div className="ohf-field-label">Google API key</div>
-            <input
-              className="ohf-input ohf-input--mono"
-              name="api_key"
-              type="password"
-              autoComplete="off"
-              spellCheck={false}
-              value={apiKey}
-              onChange={(event) => setApiKey(event.target.value)}
-            />
-          </label>
-
-          {error && (
+          {status.error && (
             <div className="ohf-alert" role="alert">
-              <span className="ohf-alert-text">{error}</span>
+              <span className="ohf-alert-text">{status.error}</span>
             </div>
           )}
 
           <div className="ohf-keys-actions">
-            {configured && (
-              <button type="button" className="ohf-btn-quiet" disabled={busy} onClick={() => void onClear()}>
-                Remove connection
-              </button>
-            )}
-            <button type="submit" className="ohf-keys-save" disabled={busy || !projectId.trim() || !apiKey.trim()}>
-              {busy ? "Saving…" : configured ? "Update connection" : "Save connection"}
+            <button type="button" className="ohf-btn-quiet" disabled={busy} onClick={() => void refresh()}>
+              {busy ? "Checking…" : "Check again"}
+            </button>
+            <button type="button" className="ohf-keys-save" disabled={busy || !status.available} onClick={onClose}>
+              Done
             </button>
           </div>
-        </form>
+        </div>
       </div>
     </dialog>
   );

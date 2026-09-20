@@ -31,12 +31,15 @@ export type CostSession = {
   error: string | null;
 };
 
+let schemaReady: Promise<void> | null = null;
+
 export async function createCostSession(
   userId: string,
   plane: GenerationPlane,
   requestId: string,
   modelLabel: string,
 ): Promise<void> {
+  await ensureSchema();
   const now = new Date();
   const title = plane.prompt.text.trim().replace(/\s+/g, " ").slice(0, 100) || modelLabel;
   await database()
@@ -63,6 +66,7 @@ export async function updateCostSession(
   userId: string,
   status: GenerationStatus,
 ): Promise<void> {
+  await ensureSchema();
   const usage = status.usage;
   const resultUrl = status.images?.[0]?.url ?? status.video?.url ?? null;
   const error = typeof status.error === "string" ? status.error : status.error ? JSON.stringify(status.error) : null;
@@ -95,6 +99,7 @@ export async function updateCostSession(
 }
 
 export async function listDailyCosts(userId: string): Promise<DailyCost[]> {
+  await ensureSchema();
   const rows = await database()
     .prepare(
       `SELECT day_local AS day, COUNT(*) AS sessions, SUM(total_tokens) AS tokens,
@@ -108,6 +113,7 @@ export async function listDailyCosts(userId: string): Promise<DailyCost[]> {
 }
 
 export async function listCostSessions(userId: string, day: string): Promise<CostSession[]> {
+  await ensureSchema();
   if (!/^\d{4}-\d{2}-\d{2}$/.test(day)) throw new Error("Invalid day");
   const rows = await database()
     .prepare(
@@ -126,6 +132,7 @@ export async function listCostSessions(userId: string, day: string): Promise<Cos
 }
 
 export async function deleteCostSession(userId: string, id: number): Promise<void> {
+  await ensureSchema();
   const row = await database()
     .prepare("SELECT request_id AS requestId, result_url AS resultUrl FROM generation_sessions WHERE id = ? AND user_id = ?")
     .bind(id, userId)
@@ -139,8 +146,47 @@ export async function deleteCostSession(userId: string, id: number): Promise<voi
 }
 
 function database(): D1Database {
-  if (!env.DB) throw new Error("Sites cost database is unavailable");
+  if (!env.DB) throw new Error("Local cost database is unavailable");
   return env.DB;
+}
+
+function ensureSchema(): Promise<void> {
+  schemaReady ??= (async () => {
+    await database().prepare(
+      `CREATE TABLE IF NOT EXISTS generation_sessions (
+        id integer PRIMARY KEY AUTOINCREMENT NOT NULL,
+        user_id text NOT NULL,
+        request_id text NOT NULL,
+        day_local text NOT NULL,
+        title text NOT NULL,
+        model_id text NOT NULL,
+        model_label text NOT NULL,
+        surface text NOT NULL,
+        status text NOT NULL,
+        created_at text NOT NULL,
+        completed_at text,
+        input_tokens integer DEFAULT 0 NOT NULL,
+        output_tokens integer DEFAULT 0 NOT NULL,
+        total_tokens integer DEFAULT 0 NOT NULL,
+        billable_units integer DEFAULT 0 NOT NULL,
+        unit_label text DEFAULT 'tokens' NOT NULL,
+        usd_micros integer DEFAULT 0 NOT NULL,
+        brl_micros integer DEFAULT 0 NOT NULL,
+        brl_per_usd_micros integer DEFAULT 0 NOT NULL,
+        pricing_date text,
+        result_url text,
+        settings_json text NOT NULL,
+        error text
+      )`,
+    ).run();
+    await database().prepare(
+      "CREATE UNIQUE INDEX IF NOT EXISTS generation_sessions_request_id_unique ON generation_sessions (request_id)",
+    ).run();
+    await database().prepare(
+      "CREATE INDEX IF NOT EXISTS idx_generation_sessions_user_day ON generation_sessions (user_id, day_local)",
+    ).run();
+  })();
+  return schemaReady;
 }
 
 function localDay(date: Date): string {

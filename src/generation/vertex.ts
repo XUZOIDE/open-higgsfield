@@ -5,6 +5,7 @@ import { Buffer as NodeBuffer } from "node:buffer";
 import { createHash, randomUUID } from "node:crypto";
 
 import type { GenerationPlane } from "./catalog/types";
+import { getGcloudCredentials } from "./gcloud-auth";
 import type { GenerationStatus, QueuedGeneration } from "./platform";
 import { imageUsage, omniUsage, veoUsage } from "./pricing";
 
@@ -17,19 +18,19 @@ type Job =
 
 export async function submitVertexGeneration(
   plane: GenerationPlane,
-  apiKey: string,
+  accessToken: string,
   projectId: string,
   userId: string,
   requestId = randomUUID(),
 ): Promise<QueuedGeneration> {
   if (plane.model === "gemini-3.1-flash-image" || plane.model === "gemini-3-pro-image") {
-    const status = await generateImage(requestId, plane, apiKey, projectId, userId);
+    const status = await generateImage(requestId, plane, accessToken, projectId, userId);
     await writeJob(userId, requestId, { kind: "complete", status });
   } else if (plane.model === "gemini-omni-1.1-flash-preview") {
-    const interactionId = await submitOmni(plane, apiKey, projectId, userId);
+    const interactionId = await submitOmni(plane, accessToken, projectId, userId);
     await writeJob(userId, requestId, { kind: "omni", requestId, interactionId, projectId });
   } else if (plane.model === "veo-3.1-generate-001") {
-    const operationName = await submitVeo(plane, apiKey, projectId, userId);
+    const operationName = await submitVeo(plane, accessToken, projectId, userId);
     await writeJob(userId, requestId, {
       kind: "veo",
       requestId,
@@ -46,16 +47,16 @@ export async function submitVertexGeneration(
 
 export async function getVertexStatus(
   requestId: string,
-  apiKey: string,
+  accessToken: string,
   projectId: string,
   userId: string,
 ): Promise<GenerationStatus> {
   const job = await readJob(userId, requestId);
   if (job.kind === "complete") return job.status;
   if (job.projectId !== projectId) {
-    throw new Error(`This generation belongs to Google Cloud project ${job.projectId}. Restore that project and key to continue.`);
+    throw new Error(`This generation belongs to Google Cloud project ${job.projectId}. Restore that active gcloud project to continue.`);
   }
-  const status = job.kind === "omni" ? await pollOmni(job, apiKey, userId) : await pollVeo(job, apiKey, userId);
+  const status = job.kind === "omni" ? await pollOmni(job, accessToken, userId) : await pollVeo(job, accessToken, userId);
   if (status.status === "completed" || status.status === "failed") {
     await writeJob(userId, requestId, { kind: "complete", status });
   }
@@ -82,7 +83,7 @@ export async function readLocalMedia(userId: string, filename: string): Promise<
 async function generateImage(
   requestId: string,
   plane: GenerationPlane,
-  apiKey: string,
+  accessToken: string,
   projectId: string,
   userId: string,
 ): Promise<GenerationStatus> {
@@ -106,7 +107,7 @@ async function generateImage(
         },
       },
       timeout: 180_000,
-      apiKey,
+      accessToken,
       projectId,
     },
   );
@@ -122,7 +123,7 @@ async function generateImage(
   return { status: "completed", requestId, images, usage: await imageUsage(plane.model, response) };
 }
 
-async function submitOmni(plane: GenerationPlane, apiKey: string, projectId: string, userId: string): Promise<string> {
+async function submitOmni(plane: GenerationPlane, accessToken: string, projectId: string, userId: string): Promise<string> {
   const input: Record<string, unknown>[] = [{ type: "text", text: plane.prompt.text }];
   const first = plane.media.start?.[0];
   if (first) {
@@ -148,7 +149,7 @@ async function submitOmni(plane: GenerationPlane, apiKey: string, projectId: str
       },
     },
     timeout: 60_000,
-    apiKey,
+    accessToken,
     projectId,
   });
   const id = string(response.id);
@@ -156,10 +157,10 @@ async function submitOmni(plane: GenerationPlane, apiKey: string, projectId: str
   return id;
 }
 
-async function pollOmni(job: Extract<Job, { kind: "omni" }>, apiKey: string, userId: string): Promise<GenerationStatus> {
+async function pollOmni(job: Extract<Job, { kind: "omni" }>, accessToken: string, userId: string): Promise<GenerationStatus> {
   const response = await googleJson<Record<string, unknown>>(
     `${globalBase(job.projectId)}/interactions/${encodeURIComponent(job.interactionId)}`,
-    { method: "GET", timeout: 60_000, apiKey, projectId: job.projectId },
+    { method: "GET", timeout: 60_000, accessToken, projectId: job.projectId },
   );
   const providerStatus = string(response.status) || "in_progress";
   if (providerStatus !== "completed") {
@@ -170,7 +171,7 @@ async function pollOmni(job: Extract<Job, { kind: "omni" }>, apiKey: string, use
   }
   const video = findOmniVideo(response);
   if (!video) return { status: "failed", requestId: job.requestId, error: "Google returned no video output" };
-  const url = await persistVideo(video, apiKey, job.projectId, userId);
+  const url = await persistVideo(video, accessToken, job.projectId, userId);
   return {
     status: "completed",
     requestId: job.requestId,
@@ -179,7 +180,7 @@ async function pollOmni(job: Extract<Job, { kind: "omni" }>, apiKey: string, use
   };
 }
 
-async function submitVeo(plane: GenerationPlane, apiKey: string, projectId: string, userId: string): Promise<string> {
+async function submitVeo(plane: GenerationPlane, accessToken: string, projectId: string, userId: string): Promise<string> {
   const instance: Record<string, unknown> = { prompt: plane.prompt.text };
   const first = plane.media.start?.[0];
   const last = plane.media.end?.[0];
@@ -202,7 +203,7 @@ async function submitVeo(plane: GenerationPlane, apiKey: string, projectId: stri
         },
       },
       timeout: 60_000,
-      apiKey,
+      accessToken,
       projectId,
     },
   );
@@ -211,10 +212,10 @@ async function submitVeo(plane: GenerationPlane, apiKey: string, projectId: stri
   return name;
 }
 
-async function pollVeo(job: Extract<Job, { kind: "veo" }>, apiKey: string, userId: string): Promise<GenerationStatus> {
+async function pollVeo(job: Extract<Job, { kind: "veo" }>, accessToken: string, userId: string): Promise<GenerationStatus> {
   const response = await googleJson<Record<string, unknown>>(
     `${veoBase(job.projectId)}/${job.model}:fetchPredictOperation`,
-    { method: "POST", body: { operationName: job.operationName }, timeout: 60_000, apiKey, projectId: job.projectId },
+    { method: "POST", body: { operationName: job.operationName }, timeout: 60_000, accessToken, projectId: job.projectId },
   );
   if (response.done !== true) return { status: "processing", requestId: job.requestId };
   if (response.error) {
@@ -229,7 +230,7 @@ async function pollVeo(job: Extract<Job, { kind: "veo" }>, apiKey: string, userI
   }
   const url = bytes
     ? await saveLocalMedia(userId, NodeBuffer.from(bytes, "base64"), string(first.mimeType) || "video/mp4")
-    : await saveLocalMedia(userId, await downloadGcs(gcsUri!, apiKey, job.projectId), string(first.mimeType) || "video/mp4");
+    : await saveLocalMedia(userId, await downloadGcs(gcsUri!, accessToken, job.projectId), string(first.mimeType) || "video/mp4");
   return {
     status: "completed",
     requestId: job.requestId,
@@ -245,17 +246,17 @@ async function veoImage(url: string, userId: string) {
 
 async function mediaFromUrl(url: string, userId: string): Promise<{ data: NodeBuffer; mimeType: string }> {
   if (url.startsWith("/api/media/")) return readLocalMedia(userId, url.slice("/api/media/".length));
-  throw new Error("Input media must be uploaded to this private Site");
+  throw new Error("Input media must be uploaded to this local app");
 }
 
-async function persistVideo(video: Record<string, unknown>, apiKey: string, projectId: string, userId: string): Promise<string> {
+async function persistVideo(video: Record<string, unknown>, accessToken: string, projectId: string, userId: string): Promise<string> {
   const mimeType = string(video.mime_type) || string(video.mimeType) || "video/mp4";
   const data = string(video.data);
   if (data) return saveLocalMedia(userId, NodeBuffer.from(data, "base64"), mimeType);
   const uri = string(video.uri);
   if (!uri) throw new Error("Video output has neither data nor URI");
   const bytes = uri.startsWith("gs://")
-    ? await downloadGcs(uri, apiKey, projectId)
+    ? await downloadGcs(uri, accessToken, projectId)
     : await downloadApprovedGoogleVideo(uri);
   return saveLocalMedia(userId, bytes, mimeType);
 }
@@ -275,14 +276,15 @@ async function downloadApprovedGoogleVideo(uri: string): Promise<NodeBuffer> {
   return bytes;
 }
 
-async function downloadGcs(uri: string, apiKey: string, projectId: string): Promise<NodeBuffer> {
+async function downloadGcs(uri: string, accessToken: string, projectId: string): Promise<NodeBuffer> {
   const match = /^gs:\/\/([^/]+)\/(.+)$/.exec(uri);
   if (!match) throw new Error("Invalid Cloud Storage URI");
   const url = `https://storage.googleapis.com/download/storage/v1/b/${encodeURIComponent(match[1]!)}/o/${encodeURIComponent(match[2]!)}?alt=media`;
-  const response = await fetch(url, {
-    headers: { "x-goog-api-key": apiKey, "x-goog-user-project": projectId },
+  const response = await authenticatedFetch(url, {
+    method: "GET",
+    headers: { "x-goog-user-project": projectId },
     signal: AbortSignal.timeout(180_000),
-  });
+  }, accessToken, projectId);
   if (!response.ok) throw new Error(`Could not download generated video (${response.status})`);
   return NodeBuffer.from(await response.arrayBuffer());
 }
@@ -312,20 +314,19 @@ async function googleJson<T>(
     method: "GET" | "POST";
     body?: Record<string, unknown>;
     timeout: number;
-    apiKey: string;
+    accessToken: string;
     projectId: string;
   },
 ): Promise<T> {
-  const response = await fetch(url, {
+  const response = await authenticatedFetch(url, {
     method: options.method,
     headers: {
-      "x-goog-api-key": options.apiKey,
       "x-goog-user-project": options.projectId,
       ...(options.body ? { "Content-Type": "application/json" } : {}),
     },
     ...(options.body ? { body: JSON.stringify(options.body) } : {}),
     signal: AbortSignal.timeout(options.timeout),
-  });
+  }, options.accessToken, options.projectId);
   const text = await response.text();
   let payload: unknown;
   try {
@@ -335,6 +336,27 @@ async function googleJson<T>(
   }
   if (!response.ok) throw new Error(googleError(response.status, payload));
   return payload as T;
+}
+
+async function authenticatedFetch(
+  url: string,
+  init: RequestInit,
+  accessToken: string,
+  projectId: string,
+): Promise<Response> {
+  const request = (token: string) => fetch(url, {
+    ...init,
+    headers: { ...Object.fromEntries(new Headers(init.headers).entries()), Authorization: `Bearer ${token}` },
+  });
+  let response = await request(accessToken);
+  if (response.status !== 401) return response;
+
+  const refreshed = await getGcloudCredentials(true);
+  if (refreshed.projectId !== projectId) {
+    throw new Error(`The active Google Cloud project changed from ${projectId} to ${refreshed.projectId} during this run`);
+  }
+  response = await request(refreshed.accessToken);
+  return response;
 }
 
 function globalBase(projectId: string): string {
@@ -377,7 +399,7 @@ function bytesToBase64(data: Uint8Array): string {
 }
 
 function mediaBucket(): R2Bucket {
-  if (!env.MEDIA) throw new Error("Sites media storage is unavailable");
+  if (!env.MEDIA) throw new Error("Local media storage is unavailable");
   return env.MEDIA;
 }
 

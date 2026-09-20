@@ -3,11 +3,10 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { hasPlatformCredentials, submitGeneration } from "@/generation/actions";
-import { MissingCredentialsError } from "@/generation/credentials";
 import { MODELS, getModel } from "@/generation/catalog";
 import type { Surface } from "@/generation/catalog";
 import { assemblePlane } from "@/generation/plane";
-import type { GenerationStatus } from "@/generation/platform";
+import { MissingCredentialsError, type GenerationStatus } from "@/generation/platform";
 import { POLL_DEADLINE_MS, stopWatching, watchRequest } from "@/generation/poll";
 import { useActive } from "@/generation/stores/active";
 import { useImagePrompt, useVideoPrompt } from "@/generation/stores/prompt";
@@ -15,7 +14,7 @@ import { useSettings } from "@/generation/stores/settings";
 
 import { GRAIN_URI, artFor } from "./artwork";
 import { Composer } from "./composer";
-import { fileNameFor, saveFile } from "./download";
+import { fileNameFor, saveFile, saveFilesToFolder } from "./download";
 import { KeyModal } from "./key-modal";
 import {
   CROSS_VIEWS,
@@ -151,8 +150,8 @@ function failureText(status: GenerationStatus): string {
 
 function describeError(caught: unknown): string {
   const message = caught instanceof Error ? caught.message : String(caught);
-  if (caught instanceof MissingCredentialsError || message.includes("Missing Google Cloud project or API key")) {
-    return "Add your Google Cloud project and API key to generate.";
+  if (caught instanceof MissingCredentialsError || message.includes("gcloud authentication")) {
+    return "Local gcloud access is unavailable. Check the Google connection in the top bar.";
   }
   return `Generation failed — ${message}. Try again; if it repeats, check the Google connection in the top bar.`;
 }
@@ -284,7 +283,7 @@ export function OpenHiggsfieldApp({ fontClassName = "" }: { fontClassName?: stri
       } catch (caught) {
         if (!alive.current) return;
         const message = describeError(caught);
-        if (message.includes("Google Cloud project") || message.includes("Google API key")) setKeysOpen(true);
+        if (message.includes("gcloud") || message.includes("Google Cloud project")) setKeysOpen(true);
         setHistory((prev) => {
           const next = replaceRequest(prev, requestId, failedRows(requestId, expected, draft, message));
           void saveHistory(next);
@@ -336,7 +335,7 @@ export function OpenHiggsfieldApp({ fontClassName = "" }: { fontClassName?: stri
   const generate = useCallback(async () => {
     if (!keyConfigured) {
       setKeysOpen(true);
-      setError("Add your Google Cloud project and API key to generate.");
+      setError("Local gcloud access is unavailable. Check the Google connection in the top bar.");
       return;
     }
     const plane = assemblePlane();
@@ -400,7 +399,7 @@ export function OpenHiggsfieldApp({ fontClassName = "" }: { fontClassName?: stri
       } catch (caught) {
         if (!alive.current) return;
         const message = describeError(caught);
-        if (message.includes("API key") || message.includes("Google Cloud project")) setKeysOpen(true);
+        if (message.includes("gcloud") || message.includes("Google Cloud project")) setKeysOpen(true);
         setError((prev) => prev ?? message);
       } finally {
         if (alive.current) {
@@ -566,7 +565,7 @@ export function OpenHiggsfieldApp({ fontClassName = "" }: { fontClassName?: stri
     const ok = await saveFile(url, fileNameFor(record, 0));
     if (!ok) {
       setError(
-        "The platform’s CDN refused the read, so this run could not be saved. Open it to save it from the browser instead.",
+        "This run could not be saved. Check the destination and try again.",
       );
     }
   }, []);
@@ -578,18 +577,17 @@ export function OpenHiggsfieldApp({ fontClassName = "" }: { fontClassName?: stri
     const files = pickedRecords.filter((record) => record.urls[0]);
     if (files.length === 0) return;
     setSaving({ done: 0, total: files.length });
-    let refused = 0;
-    for (const [index, record] of files.entries()) {
-      const ok = await saveFile(record.urls[0]!, fileNameFor(record, index));
-      if (!ok) refused++;
-      setSaving({ done: index + 1, total: files.length });
-    }
+    const refused = await saveFilesToFolder(files.map((record, index) => ({
+      url: record.urls[0]!,
+      name: fileNameFor(record, index),
+    })));
+    setSaving({ done: files.length, total: files.length });
     setSaving(null);
     if (refused > 0) {
       setError(
         refused === files.length
-          ? "The platform’s CDN refused the read, so nothing could be saved. Open a run to save it from the browser instead."
-          : `${refused} of ${files.length} files could not be saved — the platform’s CDN refused the read. Open those runs to save them from the browser.`,
+          ? "Nothing could be saved. Check the destination and try again."
+          : `${refused} of ${files.length} files could not be saved. Check the destination and try those runs again.`,
       );
     }
   }, [pickedRecords]);
@@ -709,14 +707,11 @@ export function OpenHiggsfieldApp({ fontClassName = "" }: { fontClassName?: stri
         )}
         {keysOpen && (
           <KeyModal
-            configured={keyConfigured}
             onClose={() => setKeysOpen(false)}
-            onSaved={() => {
-              setKeyConfigured(true);
-              setKeysOpen(false);
-              setError(null);
+            onStatus={(ready) => {
+              setKeyConfigured(ready);
+              if (ready) setError(null);
             }}
-            onCleared={() => setKeyConfigured(false)}
           />
         )}
       </div>
