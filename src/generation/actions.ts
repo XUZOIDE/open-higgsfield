@@ -11,8 +11,13 @@ import {
   saveMediaBatchWithFinder,
   saveMediaWithFinder,
 } from "./gcloud-auth";
-import type { StatusResult } from "./platform";
-import { createCostSession, updateCostSession } from "./session-store";
+import type { GenerationStatus, StatusResult } from "./platform";
+import {
+  createCostSession,
+  listOpenCostSessions,
+  type OpenCostSession,
+  updateCostSession,
+} from "./session-store";
 import { getVertexStatus, submitVertexGeneration } from "./vertex";
 
 export async function hasPlatformCredentials() {
@@ -75,6 +80,45 @@ export async function getGenerationStatuses(data: unknown): Promise<StatusResult
         return { requestId, status };
       } catch (caught) {
         return { requestId, error: caught instanceof Error ? caught.message : String(caught) };
+      }
+    }),
+  );
+}
+
+export type OpenGenerationResult =
+  | { session: OpenCostSession; status: GenerationStatus }
+  | { session: OpenCostSession; discarded: true }
+  | { session: OpenCostSession; error: string };
+
+export async function recoverOpenGenerations(): Promise<OpenGenerationResult[]> {
+  const userId = await currentUserId();
+  const sessions = await listOpenCostSessions(userId);
+  if (sessions.length === 0) return [];
+  const credentials = await getGcloudCredentials();
+  return Promise.all(
+    sessions.map(async (session): Promise<OpenGenerationResult> => {
+      try {
+        const status = await getVertexStatus(
+          session.requestId,
+          credentials.accessToken,
+          credentials.projectId,
+          userId,
+        );
+        if (status.status === "completed" || status.status === "failed") {
+          await updateCostSession(userId, status);
+        }
+        return { session, status };
+      } catch (caught) {
+        const message = caught instanceof Error ? caught.message : String(caught);
+        if (message === "Generation job was not found on this machine") {
+          await updateCostSession(userId, {
+            status: "failed",
+            requestId: session.requestId,
+            error: message,
+          });
+          return { session, discarded: true };
+        }
+        return { session, error: message };
       }
     }),
   );

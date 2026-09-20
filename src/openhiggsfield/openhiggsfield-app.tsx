@@ -2,7 +2,11 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
-import { hasPlatformCredentials, submitGeneration } from "@/generation/actions";
+import {
+  hasPlatformCredentials,
+  recoverOpenGenerations,
+  submitGeneration,
+} from "@/generation/actions";
 import { MODELS, getModel } from "@/generation/catalog";
 import type { Surface } from "@/generation/catalog";
 import { assemblePlane } from "@/generation/plane";
@@ -189,6 +193,7 @@ export function OpenHiggsfieldApp({ fontClassName = "" }: { fontClassName?: stri
   const press = useRef(0);
   const alive = useRef(true);
   const freshTimers = useRef<number[]>([]);
+  const recoveryStarted = useRef(false);
   const historyRef = useRef(history);
   historyRef.current = history;
 
@@ -294,6 +299,52 @@ export function OpenHiggsfieldApp({ fontClassName = "" }: { fontClassName?: stri
     },
     [markFresh],
   );
+
+  /* A production rebuild can leave an older browser bundle open while Google
+     finishes a paid job. Recover every D1-backed open request before relying
+     on browser history, so a refresh can never strand that result. */
+  useEffect(() => {
+    if (!historyLoaded || !keyConfigured || recoveryStarted.current) return;
+    recoveryStarted.current = true;
+    void recoverOpenGenerations()
+      .then((results) => {
+        if (!alive.current) return;
+        for (const result of results) {
+          if ("discarded" in result) continue;
+          if ("error" in result) {
+            setError((prev) => prev ?? `Run recovery failed — ${result.error}`);
+            continue;
+          }
+          const { session, status } = result;
+          const entry = getModel(session.modelId);
+          const draft: RunDraft = {
+            surface: session.surface,
+            modelId: session.modelId,
+            modelLabel: session.modelLabel,
+            prompt: session.title,
+            ratio: ratioToCss(
+              session.settings.aspectRatio,
+              session.surface === "image" ? "4 / 3" : "16 / 9",
+            ),
+            meta: metaOf(entry, session.settings),
+            badge: session.surface === "video" ? durationBadge(session.settings) : undefined,
+            settings: session.settings,
+            createdAt: Date.parse(session.createdAt) || Date.now(),
+          };
+          if (status.status === "completed" || status.status === "failed") {
+            const records = terminalRows(session.requestId, draft, status);
+            setHistory((prev) => mergeHistory(records, prev));
+            markFresh(records.filter((record) => record.status === "completed").map((record) => record.id));
+            continue;
+          }
+          setHistory((prev) => mergeHistory(runningRows(session.requestId, 1, draft), prev));
+          void resume(session.requestId, draft, 1);
+        }
+      })
+      .catch((caught) => {
+        if (alive.current) setError((prev) => prev ?? describeError(caught));
+      });
+  }, [historyLoaded, keyConfigured, markFresh, resume]);
 
   /* After the log hydrates, pick up any request that was still on the platform
      when the last session died. Generate starts its own watch; this is the

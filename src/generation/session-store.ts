@@ -31,6 +31,16 @@ export type CostSession = {
   error: string | null;
 };
 
+export type OpenCostSession = {
+  requestId: string;
+  title: string;
+  modelId: string;
+  modelLabel: string;
+  surface: "image" | "video";
+  createdAt: string;
+  settings: Record<string, unknown>;
+};
+
 let schemaReady: Promise<void> | null = null;
 
 export async function createCostSession(
@@ -131,6 +141,29 @@ export async function listCostSessions(userId: string, day: string): Promise<Cos
   return rows.results;
 }
 
+/** The browser keeps its own gallery, but a rebuild can replace the client
+    bundle while a provider job is still running. D1 is the durable rendezvous:
+    the next compatible client can rediscover those jobs and finish polling
+    instead of orphaning a generation that was already paid for. */
+export async function listOpenCostSessions(userId: string): Promise<OpenCostSession[]> {
+  await ensureSchema();
+  const rows = await database()
+    .prepare(
+      `SELECT request_id AS requestId, title, model_id AS modelId,
+              model_label AS modelLabel, surface, created_at AS createdAt,
+              settings_json AS settingsJson
+       FROM generation_sessions
+       WHERE user_id = ? AND status = 'running'
+       ORDER BY created_at DESC LIMIT 20`,
+    )
+    .bind(userId)
+    .all<Omit<OpenCostSession, "settings"> & { settingsJson: string }>();
+  return rows.results.map(({ settingsJson, ...row }) => ({
+    ...row,
+    settings: parseStoredSettings(settingsJson),
+  }));
+}
+
 export async function deleteCostSession(userId: string, id: number): Promise<void> {
   await ensureSchema();
   const row = await database()
@@ -196,4 +229,15 @@ function localDay(date: Date): string {
     month: "2-digit",
     day: "2-digit",
   }).format(date);
+}
+
+function parseStoredSettings(value: string): Record<string, unknown> {
+  try {
+    const parsed: unknown = JSON.parse(value);
+    return parsed !== null && typeof parsed === "object" && !Array.isArray(parsed)
+      ? (parsed as Record<string, unknown>)
+      : {};
+  } catch {
+    return {};
+  }
 }
