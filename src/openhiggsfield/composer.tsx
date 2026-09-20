@@ -92,9 +92,10 @@ export function Composer({
   const dockRef = useRef<HTMLDivElement>(null);
   const wrapRef = useRef<HTMLDivElement>(null);
   const promptRef = useRef<HTMLTextAreaElement>(null);
-  /* A run in flight is not a lock: it holds its own tile in the grid, so the
-     only thing that can stop a press is having nothing to say. */
-  const disabled = prompt.text.trim().length === 0;
+  /* Keep one paid submission in flight at a time. The explicit batch control
+     remains the safe way to request multiple results from one press. */
+  const promptEmpty = prompt.text.trim().length === 0;
+  const disabled = promptEmpty || generating;
 
   /* One batch control, two mechanisms. A model that declares its own
      results-per-request gets that setting written; the rest are submitted once
@@ -211,7 +212,11 @@ export function Composer({
   const attachLabel = tray.allFull ? "Change the inputs" : "Add an input";
   const settingKey = overlay?.startsWith(SETTING) ? overlay.slice(SETTING.length) : null;
   const generateLabel = batchValue > 1 ? `Generate ${batchValue} results` : "Generate";
-  const generateTip = disabled ? "Write a prompt first" : `${generateLabel} · ${shortcut ?? "⌘↵"}`;
+  const generateTip = promptEmpty
+    ? "Write a prompt first"
+    : generating
+      ? "Wait for the current generation to finish"
+      : `${generateLabel} · ${shortcut ?? "⌘↵"}`;
 
   return (
     <div className="ohf-dock" ref={dockRef} data-selecting={selecting}>

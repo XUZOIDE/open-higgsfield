@@ -168,6 +168,9 @@ const Tile = memo(function Tile({
   );
 
   if (item.status === "failed") {
+    const canRecheck =
+      item.error === "Google returned no video output" ||
+      item.error?.includes("timed out waiting for the platform");
     return (
       <div
         className="ohf-tile ohf-tile--failed"
@@ -182,11 +185,11 @@ const Tile = memo(function Tile({
           <button
             type="button"
             className="ohf-btn-solid"
-            title="Reuse prompt and settings"
+            title={canRecheck ? "Check the same Google interaction again — no new generation" : "Reuse prompt and settings"}
             onClick={() => onReuse(item)}
           >
             <RetryIcon />
-            Retry this run
+            {canRecheck ? "Check Google again" : "Reuse this setup"}
           </button>
         </div>
         {picker}

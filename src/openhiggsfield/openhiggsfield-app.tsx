@@ -194,6 +194,7 @@ export function OpenHiggsfieldApp({ fontClassName = "" }: { fontClassName?: stri
   const alive = useRef(true);
   const freshTimers = useRef<number[]>([]);
   const recoveryStarted = useRef(false);
+  const submitting = useRef(false);
   const historyRef = useRef(history);
   historyRef.current = history;
 
@@ -280,10 +281,11 @@ export function OpenHiggsfieldApp({ fontClassName = "" }: { fontClassName?: stri
         markFresh(records.filter((record) => record.status === "completed").map((record) => record.id));
         if (records.some((record) => record.status === "failed")) {
           const failure = records[0]?.error ?? "the platform reported a failure";
-          setError(
-            (prev) =>
-              prev ?? `Run not delivered — ${failure}. Adjust the prompt or settings and retry.`,
-          );
+          const message =
+            failure === "Google returned no video output"
+              ? "Google completed this interaction without a video. It was preserved; Check Google again rechecks the same interaction without creating a new paid generation."
+              : `Run not delivered — ${failure}. Adjust the prompt or settings and retry.`;
+          setError((prev) => prev ?? message);
         }
       } catch (caught) {
         if (!alive.current) return;
@@ -380,10 +382,10 @@ export function OpenHiggsfieldApp({ fontClassName = "" }: { fontClassName?: stri
     [setModel, surface],
   );
 
-  /* Presses do not wait on each other. A press snapshots its own plane, opens
-     its own skeletons and keeps its own watch, so the composer is free the
-     moment the tiles appear and any number of runs can be in flight. */
+  /* The UI disables Generate while a paid run is active. This synchronous
+     guard also closes the double-click gap before React paints that state. */
   const generate = useCallback(async () => {
+    if (submitting.current) return;
     if (!keyConfigured) {
       setKeysOpen(true);
       setError("Local gcloud access is unavailable. Check the Google connection in the top bar.");
@@ -432,11 +434,6 @@ export function OpenHiggsfieldApp({ fontClassName = "" }: { fontClassName?: stri
       createdAt: startedAt,
     };
 
-    setError(null);
-    /* Newest press on top, above whatever is still rendering from the last. */
-    setRuns((prev) => [...pending, ...prev]);
-    galleryRef.current?.scrollTo({ top: 0, behavior: "smooth" });
-
     const runOne = async (slot: { skeletons: string[] }) => {
       try {
         const queued = await submitGeneration(plane);
@@ -459,7 +456,16 @@ export function OpenHiggsfieldApp({ fontClassName = "" }: { fontClassName?: stri
       }
     };
 
-    await Promise.all(slots.map(runOne));
+    submitting.current = true;
+    try {
+      setError(null);
+      /* Newest press on top, above whatever is still rendering from the last. */
+      setRuns((prev) => [...pending, ...prev]);
+      galleryRef.current?.scrollTo({ top: 0, behavior: "smooth" });
+      await Promise.all(slots.map(runOne));
+    } finally {
+      submitting.current = false;
+    }
   }, [keyConfigured, resume]);
 
   /* Reuse restores the whole plane the run was made from — model, its dials,
@@ -467,6 +473,24 @@ export function OpenHiggsfieldApp({ fontClassName = "" }: { fontClassName?: stri
      re-render a different picture from the same prompt. */
   const retry = useCallback(
     (record: RunRecord) => {
+      const canRecheck =
+        record.status === "failed" &&
+        Boolean(record.requestId) &&
+        (record.error === "Google returned no video output" ||
+          record.error?.includes("timed out waiting for the platform"));
+      if (canRecheck) {
+        const requestId = record.requestId!;
+        const draft = draftOf(record);
+        setHistory((prev) =>
+          prev.map((entry) =>
+            entry.id === record.id ? { ...entry, status: "running", error: undefined } : entry,
+          ),
+        );
+        setViewerId(null);
+        setError(null);
+        void resume(requestId, draft, 1);
+        return;
+      }
       if (MODELS.some((entry) => entry.id === record.modelId)) {
         setModel(record.modelId);
         if (record.settings) setSettings(record.modelId, record.settings);
@@ -476,7 +500,7 @@ export function OpenHiggsfieldApp({ fontClassName = "" }: { fontClassName?: stri
       setError(null);
       setFocusNonce((n) => n + 1);
     },
-    [setModel, setSettings],
+    [resume, setModel, setSettings],
   );
 
   const toggleFavorite = useCallback((record: RunRecord) => {

@@ -5,7 +5,10 @@ import type { GenerationStatus, StatusResult } from "./platform";
 const TERMINAL = new Set(["completed", "failed", "nsfw", "canceled"]);
 
 export const POLL_INTERVAL_MS = 4000;
-export const POLL_DEADLINE_MS = 10 * 60_000;
+/** Background interactions are retained by Google for up to 14 days. A slow
+    render must remain recoverable for that whole window instead of becoming a
+    local failure after ten minutes. */
+export const POLL_DEADLINE_MS = 14 * 24 * 60 * 60_000;
 /** Rounds allowed to fail back to back before the watches are given up on. One
     dropped round must not end every generation in flight. */
 const MAX_MISSES = 3;

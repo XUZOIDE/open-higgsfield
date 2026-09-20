@@ -6,6 +6,7 @@ import { createHash, randomUUID } from "node:crypto";
 
 import type { GenerationPlane } from "./catalog/types";
 import { getGcloudCredentials } from "./gcloud-auth";
+import { assertGoogleInlineImage } from "./media-limits";
 import type { GenerationStatus, QueuedGeneration } from "./platform";
 import { imageUsage, omniUsage, veoUsage } from "./pricing";
 
@@ -57,7 +58,7 @@ export async function getVertexStatus(
     throw new Error(`This generation belongs to Google Cloud project ${job.projectId}. Restore that active gcloud project to continue.`);
   }
   const status = job.kind === "omni" ? await pollOmni(job, accessToken, userId) : await pollVeo(job, accessToken, userId);
-  if (status.status === "completed" || status.status === "failed") {
+  if (status.status === "completed" || (status.status === "failed" && !isRecoverableNoOutput(status))) {
     await writeJob(userId, requestId, { kind: "complete", status });
   }
   return status;
@@ -90,6 +91,7 @@ async function generateImage(
   const parts: Record<string, unknown>[] = [{ text: plane.prompt.text }];
   for (const item of plane.media.reference ?? []) {
     const media = await mediaFromUrl(item.url, userId);
+    assertGoogleInlineImage({ byteLength: media.data.byteLength, mimeType: media.mimeType });
     parts.push({ inlineData: { mimeType: media.mimeType, data: bytesToBase64(media.data) } });
   }
   const response = await googleJson<Record<string, unknown>>(
@@ -128,6 +130,7 @@ async function submitOmni(plane: GenerationPlane, accessToken: string, projectId
   const first = plane.media.start?.[0];
   if (first) {
     const media = await mediaFromUrl(first.url, userId);
+    assertGoogleInlineImage({ byteLength: media.data.byteLength, mimeType: media.mimeType });
     input.push({ type: "image", mime_type: media.mimeType, data: bytesToBase64(media.data) });
   }
   const response = await googleJson<Record<string, unknown>>(`${globalBase(projectId)}/interactions`, {
@@ -402,6 +405,10 @@ function bytesToBase64(data: Uint8Array): string {
 function mediaBucket(): R2Bucket {
   if (!env.MEDIA) throw new Error("Local media storage is unavailable");
   return env.MEDIA;
+}
+
+function isRecoverableNoOutput(status: GenerationStatus): boolean {
+  return status.error === "Google returned no video output";
 }
 
 function extensionForMime(mimeType: string): string {

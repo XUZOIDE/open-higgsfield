@@ -9,6 +9,7 @@
     "dev": "node scripts/run-framework.mjs dev",
     "build": "node scripts/run-framework.mjs build",
     "start": "node scripts/run-local-start.mjs",
+    "test": "node --experimental-strip-types --test test/*.test.mjs",
     "db:generate": "drizzle-kit generate",
     "brand": "node scripts/build-brand-assets.mjs"
   },
