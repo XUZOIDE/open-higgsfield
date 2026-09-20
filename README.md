@@ -17,6 +17,8 @@ the ignored `.wrangler/state` directory. Browser gallery metadata is kept in
 IndexedDB. The `/costs` page groups estimated spend by São Paulo date and lets
 you inspect or delete each session and its stored result.
 
+Individual media uploads can be up to 50 MB.
+
 Cost figures are estimates based on model usage returned by Google, the pricing
 snapshot in `src/generation/pricing.ts`, and the latest available PTAX sell
 rate. They are not a Google Cloud invoice. Veo is billed by generated seconds
