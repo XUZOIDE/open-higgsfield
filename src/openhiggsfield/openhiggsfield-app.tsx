@@ -151,10 +151,10 @@ function failureText(status: GenerationStatus): string {
 
 function describeError(caught: unknown): string {
   const message = caught instanceof Error ? caught.message : String(caught);
-  if (caught instanceof MissingCredentialsError || message.includes("Missing Google API key")) {
-    return "Add your Google API key to generate.";
+  if (caught instanceof MissingCredentialsError || message.includes("Missing Google Cloud project or API key")) {
+    return "Add your Google Cloud project and API key to generate.";
   }
-  return `Generation failed — ${message}. Try again; if it repeats, check the API key in the top bar.`;
+  return `Generation failed — ${message}. Try again; if it repeats, check the Google connection in the top bar.`;
 }
 
 export function OpenHiggsfieldApp({ fontClassName = "" }: { fontClassName?: string }) {
@@ -284,7 +284,7 @@ export function OpenHiggsfieldApp({ fontClassName = "" }: { fontClassName?: stri
       } catch (caught) {
         if (!alive.current) return;
         const message = describeError(caught);
-        if (message.includes("Google API key")) setKeysOpen(true);
+        if (message.includes("Google Cloud project") || message.includes("Google API key")) setKeysOpen(true);
         setHistory((prev) => {
           const next = replaceRequest(prev, requestId, failedRows(requestId, expected, draft, message));
           void saveHistory(next);
@@ -336,7 +336,7 @@ export function OpenHiggsfieldApp({ fontClassName = "" }: { fontClassName?: stri
   const generate = useCallback(async () => {
     if (!keyConfigured) {
       setKeysOpen(true);
-      setError("Add your Google API key to generate.");
+      setError("Add your Google Cloud project and API key to generate.");
       return;
     }
     const plane = assemblePlane();
@@ -400,7 +400,7 @@ export function OpenHiggsfieldApp({ fontClassName = "" }: { fontClassName?: stri
       } catch (caught) {
         if (!alive.current) return;
         const message = describeError(caught);
-        if (message.includes("API key")) setKeysOpen(true);
+        if (message.includes("API key") || message.includes("Google Cloud project")) setKeysOpen(true);
         setError((prev) => prev ?? message);
       } finally {
         if (alive.current) {

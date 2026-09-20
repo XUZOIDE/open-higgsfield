@@ -19,9 +19,9 @@ import { createCostSession, updateCostSession } from "./session-store";
 import { getVertexStatus, submitVertexGeneration } from "./vertex";
 
 export async function savePlatformCredentials(data: unknown) {
-  const { apiKey } = parseCredentialInput(data);
+  const credentials = parseCredentialInput(data);
   const jar = await cookies();
-  jar.set(PLATFORM_KEY_COOKIE, encodeCredentials(apiKey), PLATFORM_KEY_COOKIE_OPTIONS);
+  jar.set(PLATFORM_KEY_COOKIE, encodeCredentials(credentials), PLATFORM_KEY_COOKIE_OPTIONS);
 }
 
 export async function clearPlatformCredentials() {
@@ -31,6 +31,10 @@ export async function clearPlatformCredentials() {
 
 export async function hasPlatformCredentials() {
   return (await readStoredCredentials()) !== null;
+}
+
+export async function getPlatformProjectId() {
+  return (await readStoredCredentials())?.projectId ?? null;
 }
 
 export async function submitGeneration(plane: GenerationPlane) {
@@ -43,7 +47,8 @@ export async function submitGeneration(plane: GenerationPlane) {
   const requestId = randomUUID();
   await createCostSession(userId, parsed, requestId, model.label);
   try {
-    return await submitVertexGeneration(parsed, (await readCredentials()).apiKey, userId, requestId);
+    const credentials = await readCredentials();
+    return await submitVertexGeneration(parsed, credentials.apiKey, credentials.projectId, userId, requestId);
   } catch (caught) {
     await updateCostSession(userId, {
       status: "failed",
@@ -65,7 +70,7 @@ export async function getGenerationStatuses(data: unknown): Promise<StatusResult
   return Promise.all(
     requestIds.map(async (requestId): Promise<StatusResult> => {
       try {
-        const status = await getVertexStatus(requestId, credentials.apiKey, userId);
+        const status = await getVertexStatus(requestId, credentials.apiKey, credentials.projectId, userId);
         if (status.status === "completed" || status.status === "failed") {
           await updateCostSession(userId, status);
         }

@@ -133,11 +133,11 @@ export function Topbar({
           data-busy={busy}
           data-ready={keyConfigured}
           onClick={onKeys}
-          aria-label={keyConfigured ? "Edit Google API key" : "Add Google API key"}
-          title={keyConfigured ? "Edit Google API key" : "Add Google API key"}
+          aria-label={keyConfigured ? "Edit Google Cloud connection" : "Add Google Cloud connection"}
+          title={keyConfigured ? "Edit Google Cloud connection" : "Add Google Cloud connection"}
         >
           <KeyIcon />
-          <span className="ohf-key-text">{keyConfigured ? "Google key" : "Add key"}</span>
+          <span className="ohf-key-text">{keyConfigured ? "Google access" : "Add Google access"}</span>
           <span className="ohf-lamp" />
         </button>
       </div>

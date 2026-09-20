@@ -7,9 +7,10 @@ This fork runs as a private OpenAI Site and supports only:
 - Omni 1.1 Flash (`gemini-omni-1.1-flash-preview`)
 - Veo 3.1 (`veo-3.1-generate-001`)
 
-The Google API key is entered in the studio modal and stored in a Secure,
-HttpOnly, SameSite=Strict cookie. It is read only by server actions and is not
-written to the repository, D1, R2, logs, or browser JavaScript.
+The Google Cloud project ID and API key are entered in the studio modal and
+stored in a Secure, HttpOnly, SameSite=Strict cookie. They are read only by
+server actions and are not written to the repository, D1, R2, logs, or browser
+JavaScript. Generation usage is sent to the project entered in the modal.
 
 Generation jobs and media are stored in Sites R2 under a per-user namespace.
 Usage sessions are stored in Sites D1 and queried by the authenticated OpenAI

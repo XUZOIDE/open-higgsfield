@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState, type FormEvent } from "react";
 
-import { clearPlatformCredentials, savePlatformCredentials } from "@/generation/actions";
+import { clearPlatformCredentials, getPlatformProjectId, savePlatformCredentials } from "@/generation/actions";
 
 import { CloseIcon } from "./icons";
 
@@ -19,6 +19,7 @@ export function KeyModal({
 }) {
   const ref = useRef<HTMLDialogElement>(null);
   const panelRef = useRef<HTMLDivElement>(null);
+  const [projectId, setProjectId] = useState("");
   const [apiKey, setApiKey] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -26,6 +27,9 @@ export function KeyModal({
   useEffect(() => {
     ref.current?.showModal();
     panelRef.current?.focus();
+    void getPlatformProjectId().then((storedProjectId) => {
+      if (storedProjectId) setProjectId(storedProjectId);
+    });
   }, []);
 
   async function onSubmit(event: FormEvent) {
@@ -33,7 +37,7 @@ export function KeyModal({
     setBusy(true);
     setError(null);
     try {
-      await savePlatformCredentials({ api_key: apiKey });
+      await savePlatformCredentials({ project_id: projectId, api_key: apiKey });
       onSaved();
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "Could not save the key");
@@ -47,6 +51,7 @@ export function KeyModal({
     setError(null);
     try {
       await clearPlatformCredentials();
+      setProjectId("");
       setApiKey("");
       onCleared();
     } catch (caught) {
@@ -69,12 +74,12 @@ export function KeyModal({
         <div className="ohf-keys-head">
           <div>
             <div id="ohf-keys-title" className="ohf-keys-title">
-              Google API key
+              Google Cloud access
             </div>
             <p className="ohf-keys-copy">
               {configured
-                ? "A Google API key is stored in an httpOnly cookie. Enter another key to replace it."
-                : "Paste your Google API key. It stays in an httpOnly cookie and is used only by the server."}
+                ? "Your project ID and API key are stored in an httpOnly cookie. Enter a key to update this connection."
+                : "Enter the Google Cloud project that should receive usage, then paste an API key authorized for Vertex AI."}
             </p>
           </div>
           <button type="button" className="ohf-icon-btn" aria-label="Close" onClick={onClose}>
@@ -83,6 +88,20 @@ export function KeyModal({
         </div>
 
         <form className="ohf-keys-form" onSubmit={(event) => void onSubmit(event)}>
+          <label className="ohf-field">
+            <div className="ohf-field-label">Google Cloud project ID</div>
+            <input
+              className="ohf-input ohf-input--mono"
+              name="project_id"
+              type="text"
+              autoComplete="off"
+              spellCheck={false}
+              placeholder="my-google-cloud-project"
+              value={projectId}
+              onChange={(event) => setProjectId(event.target.value.trim().toLowerCase())}
+            />
+          </label>
+
           <label className="ohf-field">
             <div className="ohf-field-label">Google API key</div>
             <input
@@ -105,11 +124,11 @@ export function KeyModal({
           <div className="ohf-keys-actions">
             {configured && (
               <button type="button" className="ohf-btn-quiet" disabled={busy} onClick={() => void onClear()}>
-                Remove key
+                Remove connection
               </button>
             )}
-            <button type="submit" className="ohf-keys-save" disabled={busy || !apiKey.trim()}>
-              {busy ? "Saving…" : configured ? "Replace key" : "Save key"}
+            <button type="submit" className="ohf-keys-save" disabled={busy || !projectId.trim() || !apiKey.trim()}>
+              {busy ? "Saving…" : configured ? "Update connection" : "Save connection"}
             </button>
           </div>
         </form>

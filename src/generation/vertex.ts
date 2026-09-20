@@ -8,36 +8,35 @@ import type { GenerationPlane } from "./catalog/types";
 import type { GenerationStatus, QueuedGeneration } from "./platform";
 import { imageUsage, omniUsage, veoUsage } from "./pricing";
 
-const PROJECT = process.env.GOOGLE_MIDIA_PROJETO || "iticket-15544";
-const GLOBAL_BASE = `https://aiplatform.googleapis.com/v1beta1/projects/${PROJECT}/locations/global`;
 const VEO_LOCATION = process.env.GOOGLE_MIDIA_VEO_LOCATION || "us-central1";
-const VEO_BASE = `https://${VEO_LOCATION}-aiplatform.googleapis.com/v1/projects/${PROJECT}/locations/${VEO_LOCATION}/publishers/google/models`;
 
 type Job =
   | { kind: "complete"; status: GenerationStatus }
-  | { kind: "omni"; requestId: string; interactionId: string }
-  | { kind: "veo"; requestId: string; operationName: string; model: string; duration: number };
+  | { kind: "omni"; requestId: string; interactionId: string; projectId: string }
+  | { kind: "veo"; requestId: string; operationName: string; model: string; duration: number; projectId: string };
 
 export async function submitVertexGeneration(
   plane: GenerationPlane,
   apiKey: string,
+  projectId: string,
   userId: string,
   requestId = randomUUID(),
 ): Promise<QueuedGeneration> {
   if (plane.model === "gemini-3.1-flash-image" || plane.model === "gemini-3-pro-image") {
-    const status = await generateImage(requestId, plane, apiKey, userId);
+    const status = await generateImage(requestId, plane, apiKey, projectId, userId);
     await writeJob(userId, requestId, { kind: "complete", status });
   } else if (plane.model === "gemini-omni-1.1-flash-preview") {
-    const interactionId = await submitOmni(plane, apiKey, userId);
-    await writeJob(userId, requestId, { kind: "omni", requestId, interactionId });
+    const interactionId = await submitOmni(plane, apiKey, projectId, userId);
+    await writeJob(userId, requestId, { kind: "omni", requestId, interactionId, projectId });
   } else if (plane.model === "veo-3.1-generate-001") {
-    const operationName = await submitVeo(plane, apiKey, userId);
+    const operationName = await submitVeo(plane, apiKey, projectId, userId);
     await writeJob(userId, requestId, {
       kind: "veo",
       requestId,
       operationName,
       model: plane.model,
       duration: Number(plane.settings.duration),
+      projectId,
     });
   } else {
     throw new Error(`Unsupported Google media model: ${plane.model}`);
@@ -45,9 +44,17 @@ export async function submitVertexGeneration(
   return { status: "queued", requestId, statusUrl: "", cancelUrl: "" };
 }
 
-export async function getVertexStatus(requestId: string, apiKey: string, userId: string): Promise<GenerationStatus> {
+export async function getVertexStatus(
+  requestId: string,
+  apiKey: string,
+  projectId: string,
+  userId: string,
+): Promise<GenerationStatus> {
   const job = await readJob(userId, requestId);
   if (job.kind === "complete") return job.status;
+  if (job.projectId !== projectId) {
+    throw new Error(`This generation belongs to Google Cloud project ${job.projectId}. Restore that project and key to continue.`);
+  }
   const status = job.kind === "omni" ? await pollOmni(job, apiKey, userId) : await pollVeo(job, apiKey, userId);
   if (status.status === "completed" || status.status === "failed") {
     await writeJob(userId, requestId, { kind: "complete", status });
@@ -76,6 +83,7 @@ async function generateImage(
   requestId: string,
   plane: GenerationPlane,
   apiKey: string,
+  projectId: string,
   userId: string,
 ): Promise<GenerationStatus> {
   const parts: Record<string, unknown>[] = [{ text: plane.prompt.text }];
@@ -84,7 +92,7 @@ async function generateImage(
     parts.push({ inlineData: { mimeType: media.mimeType, data: bytesToBase64(media.data) } });
   }
   const response = await googleJson<Record<string, unknown>>(
-    `${GLOBAL_BASE}/publishers/google/models/${plane.model}:generateContent`,
+    `${globalBase(projectId)}/publishers/google/models/${plane.model}:generateContent`,
     {
       method: "POST",
       body: {
@@ -99,6 +107,7 @@ async function generateImage(
       },
       timeout: 180_000,
       apiKey,
+      projectId,
     },
   );
   const images: Array<{ url: string }> = [];
@@ -113,14 +122,14 @@ async function generateImage(
   return { status: "completed", requestId, images, usage: await imageUsage(plane.model, response) };
 }
 
-async function submitOmni(plane: GenerationPlane, apiKey: string, userId: string): Promise<string> {
+async function submitOmni(plane: GenerationPlane, apiKey: string, projectId: string, userId: string): Promise<string> {
   const input: Record<string, unknown>[] = [{ type: "text", text: plane.prompt.text }];
   const first = plane.media.start?.[0];
   if (first) {
     const media = await mediaFromUrl(first.url, userId);
     input.push({ type: "image", mime_type: media.mimeType, data: bytesToBase64(media.data) });
   }
-  const response = await googleJson<Record<string, unknown>>(`${GLOBAL_BASE}/interactions`, {
+  const response = await googleJson<Record<string, unknown>>(`${globalBase(projectId)}/interactions`, {
     method: "POST",
     body: {
       model: plane.model,
@@ -140,6 +149,7 @@ async function submitOmni(plane: GenerationPlane, apiKey: string, userId: string
     },
     timeout: 60_000,
     apiKey,
+    projectId,
   });
   const id = string(response.id);
   if (!id) throw new Error("Google returned no interaction id");
@@ -148,8 +158,8 @@ async function submitOmni(plane: GenerationPlane, apiKey: string, userId: string
 
 async function pollOmni(job: Extract<Job, { kind: "omni" }>, apiKey: string, userId: string): Promise<GenerationStatus> {
   const response = await googleJson<Record<string, unknown>>(
-    `${GLOBAL_BASE}/interactions/${encodeURIComponent(job.interactionId)}`,
-    { method: "GET", timeout: 60_000, apiKey },
+    `${globalBase(job.projectId)}/interactions/${encodeURIComponent(job.interactionId)}`,
+    { method: "GET", timeout: 60_000, apiKey, projectId: job.projectId },
   );
   const providerStatus = string(response.status) || "in_progress";
   if (providerStatus !== "completed") {
@@ -160,7 +170,7 @@ async function pollOmni(job: Extract<Job, { kind: "omni" }>, apiKey: string, use
   }
   const video = findOmniVideo(response);
   if (!video) return { status: "failed", requestId: job.requestId, error: "Google returned no video output" };
-  const url = await persistVideo(video, apiKey, userId);
+  const url = await persistVideo(video, apiKey, job.projectId, userId);
   return {
     status: "completed",
     requestId: job.requestId,
@@ -169,7 +179,7 @@ async function pollOmni(job: Extract<Job, { kind: "omni" }>, apiKey: string, use
   };
 }
 
-async function submitVeo(plane: GenerationPlane, apiKey: string, userId: string): Promise<string> {
+async function submitVeo(plane: GenerationPlane, apiKey: string, projectId: string, userId: string): Promise<string> {
   const instance: Record<string, unknown> = { prompt: plane.prompt.text };
   const first = plane.media.start?.[0];
   const last = plane.media.end?.[0];
@@ -178,7 +188,7 @@ async function submitVeo(plane: GenerationPlane, apiKey: string, userId: string)
   const duration = Number(plane.settings.duration);
   if (![4, 6, 8].includes(duration)) throw new Error("Veo duration must be 4, 6, or 8 seconds");
   const response = await googleJson<Record<string, unknown>>(
-    `${VEO_BASE}/${plane.model}:predictLongRunning`,
+    `${veoBase(projectId)}/${plane.model}:predictLongRunning`,
     {
       method: "POST",
       body: {
@@ -193,6 +203,7 @@ async function submitVeo(plane: GenerationPlane, apiKey: string, userId: string)
       },
       timeout: 60_000,
       apiKey,
+      projectId,
     },
   );
   const name = string(response.name);
@@ -202,8 +213,8 @@ async function submitVeo(plane: GenerationPlane, apiKey: string, userId: string)
 
 async function pollVeo(job: Extract<Job, { kind: "veo" }>, apiKey: string, userId: string): Promise<GenerationStatus> {
   const response = await googleJson<Record<string, unknown>>(
-    `${VEO_BASE}/${job.model}:fetchPredictOperation`,
-    { method: "POST", body: { operationName: job.operationName }, timeout: 60_000, apiKey },
+    `${veoBase(job.projectId)}/${job.model}:fetchPredictOperation`,
+    { method: "POST", body: { operationName: job.operationName }, timeout: 60_000, apiKey, projectId: job.projectId },
   );
   if (response.done !== true) return { status: "processing", requestId: job.requestId };
   if (response.error) {
@@ -218,7 +229,7 @@ async function pollVeo(job: Extract<Job, { kind: "veo" }>, apiKey: string, userI
   }
   const url = bytes
     ? await saveLocalMedia(userId, NodeBuffer.from(bytes, "base64"), string(first.mimeType) || "video/mp4")
-    : await saveLocalMedia(userId, await downloadGcs(gcsUri!, apiKey), string(first.mimeType) || "video/mp4");
+    : await saveLocalMedia(userId, await downloadGcs(gcsUri!, apiKey, job.projectId), string(first.mimeType) || "video/mp4");
   return {
     status: "completed",
     requestId: job.requestId,
@@ -237,14 +248,14 @@ async function mediaFromUrl(url: string, userId: string): Promise<{ data: NodeBu
   throw new Error("Input media must be uploaded to this private Site");
 }
 
-async function persistVideo(video: Record<string, unknown>, apiKey: string, userId: string): Promise<string> {
+async function persistVideo(video: Record<string, unknown>, apiKey: string, projectId: string, userId: string): Promise<string> {
   const mimeType = string(video.mime_type) || string(video.mimeType) || "video/mp4";
   const data = string(video.data);
   if (data) return saveLocalMedia(userId, NodeBuffer.from(data, "base64"), mimeType);
   const uri = string(video.uri);
   if (!uri) throw new Error("Video output has neither data nor URI");
   const bytes = uri.startsWith("gs://")
-    ? await downloadGcs(uri, apiKey)
+    ? await downloadGcs(uri, apiKey, projectId)
     : await downloadApprovedGoogleVideo(uri);
   return saveLocalMedia(userId, bytes, mimeType);
 }
@@ -264,12 +275,12 @@ async function downloadApprovedGoogleVideo(uri: string): Promise<NodeBuffer> {
   return bytes;
 }
 
-async function downloadGcs(uri: string, apiKey: string): Promise<NodeBuffer> {
+async function downloadGcs(uri: string, apiKey: string, projectId: string): Promise<NodeBuffer> {
   const match = /^gs:\/\/([^/]+)\/(.+)$/.exec(uri);
   if (!match) throw new Error("Invalid Cloud Storage URI");
   const url = `https://storage.googleapis.com/download/storage/v1/b/${encodeURIComponent(match[1]!)}/o/${encodeURIComponent(match[2]!)}?alt=media`;
   const response = await fetch(url, {
-    headers: { "x-goog-api-key": apiKey, "x-goog-user-project": PROJECT },
+    headers: { "x-goog-api-key": apiKey, "x-goog-user-project": projectId },
     signal: AbortSignal.timeout(180_000),
   });
   if (!response.ok) throw new Error(`Could not download generated video (${response.status})`);
@@ -297,13 +308,19 @@ function responseParts(response: Record<string, unknown>): Record<string, unknow
 
 async function googleJson<T>(
   url: string,
-  options: { method: "GET" | "POST"; body?: Record<string, unknown>; timeout: number; apiKey: string },
+  options: {
+    method: "GET" | "POST";
+    body?: Record<string, unknown>;
+    timeout: number;
+    apiKey: string;
+    projectId: string;
+  },
 ): Promise<T> {
   const response = await fetch(url, {
     method: options.method,
     headers: {
       "x-goog-api-key": options.apiKey,
-      "x-goog-user-project": PROJECT,
+      "x-goog-user-project": options.projectId,
       ...(options.body ? { "Content-Type": "application/json" } : {}),
     },
     ...(options.body ? { body: JSON.stringify(options.body) } : {}),
@@ -318,6 +335,14 @@ async function googleJson<T>(
   }
   if (!response.ok) throw new Error(googleError(response.status, payload));
   return payload as T;
+}
+
+function globalBase(projectId: string): string {
+  return `https://aiplatform.googleapis.com/v1beta1/projects/${projectId}/locations/global`;
+}
+
+function veoBase(projectId: string): string {
+  return `https://${VEO_LOCATION}-aiplatform.googleapis.com/v1/projects/${projectId}/locations/${VEO_LOCATION}/publishers/google/models`;
 }
 
 async function writeJob(userId: string, requestId: string, job: Job): Promise<void> {
