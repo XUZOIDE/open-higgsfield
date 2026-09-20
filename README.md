@@ -13,9 +13,10 @@ after expiry, and never sends them to browser JavaScript. Closing the local app
 stops the bridge and discards its in-memory token cache.
 
 Generation jobs, media and cost sessions are stored only on this computer in
-the ignored `.wrangler/state` directory. Browser gallery metadata is kept in
+`~/.openhiggsfield/wrangler-state`. Browser gallery metadata is kept in
 IndexedDB. The `/costs` page groups estimated spend by São Paulo date and lets
-you inspect or delete each session and its stored result.
+you inspect or delete each session and its stored result. Set
+`OPENHIGGSFIELD_DATA_DIR` before `pnpm start` to use another local data folder.
 
 Individual media uploads can be up to 50 MB.
 

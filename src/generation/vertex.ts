@@ -139,6 +139,7 @@ async function submitOmni(plane: GenerationPlane, accessToken: string, projectId
       response_format: [
         {
           type: "video",
+          delivery: "inline",
           aspect_ratio: String(plane.settings.aspectRatio),
           resolution: String(plane.settings.resolution),
           duration: `${Number(plane.settings.duration)}s`,
@@ -441,7 +442,17 @@ function string(value: unknown): string | undefined {
 
 function providerError(payload: Record<string, unknown>): string {
   const error = record(payload.error);
-  return string(error.message) || string(payload.status) || "Google media generation failed";
+  const interactionErrors = Array.isArray(payload.errors) ? payload.errors.map(record) : [];
+  const diagnostic = interactionErrors
+    .map((item) => {
+      const message = string(item.message);
+      const code = string(item.code);
+      if (!message) return code;
+      return code ? `${message} (${code})` : message;
+    })
+    .filter((item): item is string => Boolean(item))
+    .join("; ");
+  return string(error.message) || diagnostic || string(payload.status) || "Google media generation failed";
 }
 
 function googleError(status: number, payload: unknown): string {
