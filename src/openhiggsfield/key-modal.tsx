@@ -69,12 +69,12 @@ export function KeyModal({
         <div className="ohf-keys-head">
           <div>
             <div id="ohf-keys-title" className="ohf-keys-title">
-              API key
+              Google API key
             </div>
             <p className="ohf-keys-copy">
               {configured
-                ? "A key is saved in this browser. Enter a new id:secret pair to replace it."
-                : "Paste your platform key as id:secret. It stays in an httpOnly cookie and is sent as Authorization: Key id:secret."}
+                ? "A Google API key is stored in an httpOnly cookie. Enter another key to replace it."
+                : "Paste your Google API key. It stays in an httpOnly cookie and is used only by the server."}
             </p>
           </div>
           <button type="button" className="ohf-icon-btn" aria-label="Close" onClick={onClose}>
@@ -84,7 +84,7 @@ export function KeyModal({
 
         <form className="ohf-keys-form" onSubmit={(event) => void onSubmit(event)}>
           <label className="ohf-field">
-            <div className="ohf-field-label">API key</div>
+            <div className="ohf-field-label">Google API key</div>
             <input
               className="ohf-input ohf-input--mono"
               name="api_key"

@@ -1,7 +1,9 @@
 "use server";
 
 import { cookies } from "next/headers";
+import { randomUUID } from "node:crypto";
 
+import { currentUserId } from "./current-user";
 import { getModel, parseSettings } from "./catalog";
 import type { GenerationPlane } from "./catalog/types";
 import {
@@ -12,9 +14,9 @@ import {
   encodeCredentials,
   parseCredentialInput,
 } from "./credentials";
-import { createPlatformClient } from "./platform";
 import type { StatusResult } from "./platform";
-import { toPlatform } from "./to-platform";
+import { createCostSession, updateCostSession } from "./session-store";
+import { getVertexStatus, submitVertexGeneration } from "./vertex";
 
 export async function savePlatformCredentials(data: unknown) {
   const { apiKey } = parseCredentialInput(data);
@@ -37,8 +39,19 @@ export async function submitGeneration(plane: GenerationPlane) {
     ...plane,
     settings: parseSettings(model, plane.settings),
   };
-  const { path, body } = toPlatform(parsed);
-  return createPlatformClient(await readCredentials()).submit(path, body);
+  const userId = await currentUserId();
+  const requestId = randomUUID();
+  await createCostSession(userId, parsed, requestId, model.label);
+  try {
+    return await submitVertexGeneration(parsed, (await readCredentials()).apiKey, userId, requestId);
+  } catch (caught) {
+    await updateCostSession(userId, {
+      status: "failed",
+      requestId,
+      error: caught instanceof Error ? caught.message : String(caught),
+    });
+    throw caught;
+  }
 }
 
 /** Every request in flight, answered in one round trip. Next dispatches server
@@ -47,11 +60,16 @@ export async function submitGeneration(plane: GenerationPlane) {
     genuinely parallel. */
 export async function getGenerationStatuses(data: unknown): Promise<StatusResult[]> {
   const requestIds = parseRequestIds(data);
-  const client = createPlatformClient(await readCredentials());
+  const credentials = await readCredentials();
+  const userId = await currentUserId();
   return Promise.all(
     requestIds.map(async (requestId): Promise<StatusResult> => {
       try {
-        return { requestId, status: await client.status(requestId) };
+        const status = await getVertexStatus(requestId, credentials.apiKey, userId);
+        if (status.status === "completed" || status.status === "failed") {
+          await updateCostSession(userId, status);
+        }
+        return { requestId, status };
       } catch (caught) {
         return { requestId, error: caught instanceof Error ? caught.message : String(caught) };
       }
@@ -67,9 +85,7 @@ async function readStoredCredentials() {
 async function readCredentials() {
   const stored = await readStoredCredentials();
   if (!stored) throw new MissingCredentialsError();
-  const baseUrl = process.env.HF_API_BASE_URL;
-  if (!baseUrl) throw new Error("Missing HF_API_BASE_URL");
-  return { ...stored, baseUrl };
+  return stored;
 }
 
 function parseRequestIds(data: unknown): string[] {

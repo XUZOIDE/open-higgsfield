@@ -462,6 +462,28 @@
 
 /* ---------- platform lamp ---------- */
 
+.ohf-costs {
+  display: grid;
+  place-items: center;
+  min-width: 36px;
+  height: 36px;
+  padding: 0 9px;
+  border-radius: 10px;
+  color: var(--tx2);
+  font-size: 11px;
+  font-weight: 700;
+  text-decoration: none;
+  letter-spacing: -0.02em;
+  transition: color 0.22s ease, background 0.15s ease;
+}
+.ohf-costs:hover {
+  color: var(--accent);
+  background: rgba(255, 255, 255, 0.035);
+}
+.ohf-costs:active {
+  transform: scale(0.97);
+}
+
 /* Its own pill, but the control inside it is drawn as a scope tab is — same
    height, plate and type, so the two instruments read as one set. */
 .ohf-key {

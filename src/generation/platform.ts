@@ -26,6 +26,17 @@ export type GenerationStatus = {
   requestId: string;
   images?: Array<{ url: string }>;
   video?: { url: string };
+  usage?: {
+    inputTokens: number;
+    outputTokens: number;
+    totalTokens: number;
+    billableUnits: number;
+    unitLabel: "tokens" | "seconds";
+    usdMicros: number;
+    brlMicros: number;
+    brlPerUsdMicros: number;
+    pricingDate: string;
+  };
   error?: unknown;
 };
 
@@ -52,7 +63,6 @@ export function createPlatformClient(options: PlatformClientOptions) {
 
   async function send(method: "GET" | "POST", path: string, body?: Record<string, unknown>) {
     const url = `${baseUrl}${path}`;
-    console.info("[platform] request", { method, url, body: body ?? null });
     const response = await fetchImpl(url, {
       method,
       headers: {
@@ -63,7 +73,6 @@ export function createPlatformClient(options: PlatformClientOptions) {
     });
 
     const payload = await readJson(response);
-    console.info("[platform] response", { method, url, status: response.status, body: payload });
     if (!response.ok) throw new PlatformError(response.status, payload);
     return payload;
   }

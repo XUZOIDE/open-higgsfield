@@ -151,10 +151,10 @@ function failureText(status: GenerationStatus): string {
 
 function describeError(caught: unknown): string {
   const message = caught instanceof Error ? caught.message : String(caught);
-  if (caught instanceof MissingCredentialsError || message.includes("Missing platform key")) {
-    return "Add your platform key to generate.";
+  if (caught instanceof MissingCredentialsError || message.includes("Missing Google API key")) {
+    return "Add your Google API key to generate.";
   }
-  return `Generation failed — ${message}. Try again; if it repeats, check the key in the sidebar.`;
+  return `Generation failed — ${message}. Try again; if it repeats, check the API key in the top bar.`;
 }
 
 export function OpenHiggsfieldApp({ fontClassName = "" }: { fontClassName?: string }) {
@@ -221,6 +221,16 @@ export function OpenHiggsfieldApp({ fontClassName = "" }: { fontClassName?: stri
   }, [historyLoaded, history]);
 
   useEffect(() => {
+    if (!historyLoaded) return;
+    const target = new URLSearchParams(window.location.search).get("session");
+    if (!target) return;
+    const record = historyRef.current.find(
+      (item) => (item.requestId === target || item.id === target) && item.status !== "running",
+    );
+    if (record) setViewerId(record.id);
+  }, [historyLoaded]);
+
+  useEffect(() => {
     void hasPlatformCredentials().then((ready) => {
       setKeyConfigured(ready);
       if (!ready) setKeysOpen(true);
@@ -274,7 +284,7 @@ export function OpenHiggsfieldApp({ fontClassName = "" }: { fontClassName?: stri
       } catch (caught) {
         if (!alive.current) return;
         const message = describeError(caught);
-        if (message.includes("platform key")) setKeysOpen(true);
+        if (message.includes("Google API key")) setKeysOpen(true);
         setHistory((prev) => {
           const next = replaceRequest(prev, requestId, failedRows(requestId, expected, draft, message));
           void saveHistory(next);
@@ -326,7 +336,7 @@ export function OpenHiggsfieldApp({ fontClassName = "" }: { fontClassName?: stri
   const generate = useCallback(async () => {
     if (!keyConfigured) {
       setKeysOpen(true);
-      setError("Add your platform key to generate.");
+      setError("Add your Google API key to generate.");
       return;
     }
     const plane = assemblePlane();
@@ -390,7 +400,7 @@ export function OpenHiggsfieldApp({ fontClassName = "" }: { fontClassName?: stri
       } catch (caught) {
         if (!alive.current) return;
         const message = describeError(caught);
-        if (message.includes("platform key")) setKeysOpen(true);
+        if (message.includes("API key")) setKeysOpen(true);
         setError((prev) => prev ?? message);
       } finally {
         if (alive.current) {
@@ -706,9 +716,7 @@ export function OpenHiggsfieldApp({ fontClassName = "" }: { fontClassName?: stri
               setKeysOpen(false);
               setError(null);
             }}
-            onCleared={() => {
-              setKeyConfigured(false);
-            }}
+            onCleared={() => setKeyConfigured(false)}
           />
         )}
       </div>
