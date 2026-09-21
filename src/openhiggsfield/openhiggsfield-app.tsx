@@ -13,8 +13,10 @@ import { assemblePlane } from "@/generation/plane";
 import { MissingCredentialsError, type GenerationStatus } from "@/generation/platform";
 import { POLL_DEADLINE_MS, stopWatching, watchRequest } from "@/generation/poll";
 import { useActive } from "@/generation/stores/active";
+import { useImageMedia, useVideoMedia } from "@/generation/stores/media";
 import { useImagePrompt, useVideoPrompt } from "@/generation/stores/prompt";
 import { useSettings } from "@/generation/stores/settings";
+import { prepareGenerationMedia } from "@/generation/upload";
 
 import { GRAIN_URI, artFor } from "./artwork";
 import { Composer } from "./composer";
@@ -184,6 +186,7 @@ export function OpenHiggsfieldApp({ fontClassName = "" }: { fontClassName?: stri
   const [saving, setSaving] = useState<SaveProgress | null>(null);
   const [keyConfigured, setKeyConfigured] = useState(false);
   const [keysOpen, setKeysOpen] = useState(false);
+  const [preparingGeneration, setPreparingGeneration] = useState(false);
 
   const galleryRef = useRef<HTMLDivElement>(null);
   const rangeAnchor = useRef<number | null>(null);
@@ -391,8 +394,24 @@ export function OpenHiggsfieldApp({ fontClassName = "" }: { fontClassName?: stri
       setError("Local gcloud access is unavailable. Check the Google connection in the top bar.");
       return;
     }
-    const plane = assemblePlane();
-    if (!plane.prompt.text.trim()) return;
+    const assembled = assemblePlane();
+    if (!assembled.prompt.text.trim()) return;
+    submitting.current = true;
+    setPreparingGeneration(true);
+
+    let plane = assembled;
+    try {
+      const prepared = await prepareGenerationMedia(assembled);
+      plane = prepared.plane;
+      const mediaStore = getModel(plane.model).surface === "image" ? useImageMedia : useVideoMedia;
+      for (const [from, to] of prepared.replacements) mediaStore.getState().replaceUrl(from, to);
+    } catch (caught) {
+      setError(describeError(caught));
+      submitting.current = false;
+      setPreparingGeneration(false);
+      return;
+    }
+    setPreparingGeneration(false);
 
     const entry = getModel(plane.model);
     const ratio = ratioToCss(
@@ -436,7 +455,9 @@ export function OpenHiggsfieldApp({ fontClassName = "" }: { fontClassName?: stri
 
     const runOne = async (slot: { skeletons: string[] }) => {
       try {
-        const queued = await submitGeneration(plane);
+        const submitted = await submitGeneration(plane);
+        if (!submitted.ok) throw new Error(submitted.error);
+        const queued = submitted.queued;
         setHistory((prev) => {
           const next = [...runningRows(queued.requestId, slot.skeletons.length, draft), ...prev];
           void saveHistory(next);
@@ -456,7 +477,6 @@ export function OpenHiggsfieldApp({ fontClassName = "" }: { fontClassName?: stri
       }
     };
 
-    submitting.current = true;
     try {
       setError(null);
       /* Newest press on top, above whatever is still rendering from the last. */
@@ -701,7 +721,7 @@ export function OpenHiggsfieldApp({ fontClassName = "" }: { fontClassName?: stri
     () => runs.filter((active) => view === "assets" || active.surface === view),
     [runs, view],
   );
-  const busy = runs.length > 0 || history.some((record) => record.status === "running");
+  const busy = preparingGeneration || runs.length > 0 || history.some((record) => record.status === "running");
 
   return (
     <div className={`ohf ${fontClassName}`} style={{ "--ohf-grain": GRAIN_URI } as React.CSSProperties}>

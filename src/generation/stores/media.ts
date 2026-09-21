@@ -8,6 +8,7 @@ type MediaState = {
   items: MediaItem[];
   add: (item: MediaItem) => void;
   remove: (id: string) => void;
+  replaceUrl: (from: string, to: string) => void;
 };
 
 function createMediaStore(name: string) {
@@ -17,6 +18,10 @@ function createMediaStore(name: string) {
         items: [],
         add: (item) => set((state) => ({ items: [...state.items, item] })),
         remove: (id) => set((state) => ({ items: state.items.filter((item) => item.id !== id) })),
+        replaceUrl: (from, to) =>
+          set((state) => ({
+            items: state.items.map((item) => (item.url === from ? { ...item, url: to } : item)),
+          })),
       }),
       {
         name,

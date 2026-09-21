@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 
 import { currentUserId } from "@/generation/current-user";
-import { readLocalMedia } from "@/generation/vertex";
+import { inspectLocalMedia, readLocalMedia } from "@/generation/vertex";
 
 export async function GET(
   _request: Request,
@@ -19,5 +19,25 @@ export async function GET(
     });
   } catch {
     return new NextResponse("Media not found", { status: 404 });
+  }
+}
+
+export async function HEAD(
+  _request: Request,
+  context: { params: Promise<{ filename: string }> },
+): Promise<NextResponse> {
+  try {
+    const { filename } = await context.params;
+    const media = await inspectLocalMedia(await currentUserId(), filename);
+    return new NextResponse(null, {
+      headers: {
+        "Content-Type": media.mimeType,
+        "Content-Length": String(media.byteLength),
+        "Cache-Control": "private, max-age=31536000, immutable",
+        "X-Content-Type-Options": "nosniff",
+      },
+    });
+  } catch {
+    return new NextResponse(null, { status: 404 });
   }
 }

@@ -51,14 +51,20 @@ export async function submitGeneration(plane: GenerationPlane) {
   await createCostSession(userId, parsed, requestId, model.label);
   try {
     const credentials = await getGcloudCredentials();
-    return await submitVertexGeneration(parsed, credentials.accessToken, credentials.projectId, userId, requestId);
+    return {
+      ok: true as const,
+      queued: await submitVertexGeneration(parsed, credentials.accessToken, credentials.projectId, userId, requestId),
+    };
   } catch (caught) {
+    const error = caught instanceof Error ? caught.message : String(caught);
     await updateCostSession(userId, {
       status: "failed",
       requestId,
-      error: caught instanceof Error ? caught.message : String(caught),
+      error,
     });
-    throw caught;
+    /* Returning provider failures as data keeps production React from replacing
+       the useful message with its generic minified server-action error. */
+    return { ok: false as const, error };
   }
 }
 

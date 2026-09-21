@@ -9,8 +9,17 @@ const GOOGLE_INLINE_IMAGE_TYPES = new Set([
   "image/heif",
 ]);
 
+export function isGoogleInlineImageType(mimeType: string): boolean {
+  return GOOGLE_INLINE_IMAGE_TYPES.has(mimeType);
+}
+
+export function needsGoogleImageOptimization(media: { byteLength: number; mimeType: string }): boolean {
+  return media.mimeType.startsWith("image/") &&
+    (!isGoogleInlineImageType(media.mimeType) || media.byteLength > GOOGLE_INLINE_SAFE_BYTES);
+}
+
 export function assertGoogleInlineImage(media: { byteLength: number; mimeType: string }): void {
-  if (!GOOGLE_INLINE_IMAGE_TYPES.has(media.mimeType)) {
+  if (!isGoogleInlineImageType(media.mimeType)) {
     throw new Error(`Google does not accept ${media.mimeType || "this file type"} as an inline image`);
   }
   if (media.byteLength > GOOGLE_INLINE_IMAGE_LIMIT) {

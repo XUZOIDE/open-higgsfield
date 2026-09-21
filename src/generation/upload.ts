@@ -1,4 +1,5 @@
-import { GOOGLE_INLINE_SAFE_BYTES } from "./media-limits";
+import type { GenerationPlane, MediaItem } from "./catalog/types";
+import { GOOGLE_INLINE_SAFE_BYTES, needsGoogleImageOptimization } from "./media-limits";
 
 export const MAX_UPLOAD_BYTES = 50 * 1024 * 1024;
 const MAX_IMAGE_EDGE = 4096;
@@ -22,7 +23,7 @@ export async function uploadMedia(file: File): Promise<{ url: string }> {
     50 MB, but turn oversized screenshots into a compact WebP before they ever
     reach storage or a billable model request. */
 async function prepareImageForGoogle(file: File): Promise<File> {
-  if (!file.type.startsWith("image/") || file.type === "image/gif" || file.size <= GOOGLE_INLINE_SAFE_BYTES) {
+  if (!needsGoogleImageOptimization({ byteLength: file.size, mimeType: file.type })) {
     return file;
   }
 
@@ -53,6 +54,40 @@ async function prepareImageForGoogle(file: File): Promise<File> {
     bitmap.close();
   }
   throw new Error("This image could not be reduced below Google's 20 MB input limit");
+}
+
+/** Sessions created before client-side optimization can still reference a
+    large local image. Upgrade those URLs before a paid request. */
+export async function prepareGenerationMedia(
+  plane: GenerationPlane,
+): Promise<{ plane: GenerationPlane; replacements: Map<string, string> }> {
+  const replacements = new Map<string, string>();
+  const media: GenerationPlane["media"] = {};
+
+  for (const [role, items] of Object.entries(plane.media) as Array<[keyof GenerationPlane["media"], MediaItem[]]>) {
+    const prepared: MediaItem[] = [];
+    for (const item of items) {
+      let url = replacements.get(item.url) ?? item.url;
+      if (url === item.url && item.url.startsWith("/api/media/")) {
+        const head = await fetch(item.url, { method: "HEAD", cache: "no-store" });
+        if (!head.ok) throw new Error(`Could not inspect attached media (${head.status})`);
+        const byteLength = Number(head.headers.get("content-length") || 0);
+        const mimeType = head.headers.get("content-type")?.split(";")[0] || "";
+        if (needsGoogleImageOptimization({ byteLength, mimeType })) {
+          const response = await fetch(item.url, { cache: "no-store" });
+          if (!response.ok) throw new Error(`Could not read attached media (${response.status})`);
+          const blob = await response.blob();
+          const filename = item.url.split("/").pop() || "attached-image";
+          url = (await uploadMedia(new File([blob], filename, { type: mimeType || blob.type }))).url;
+          replacements.set(item.url, url);
+        }
+      }
+      prepared.push(url === item.url ? item : { ...item, url });
+    }
+    media[role] = prepared;
+  }
+
+  return { plane: { ...plane, media }, replacements };
 }
 
 function canvasBlob(canvas: HTMLCanvasElement, type: string, quality: number): Promise<Blob> {

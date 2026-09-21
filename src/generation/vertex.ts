@@ -81,6 +81,19 @@ export async function readLocalMedia(userId: string, filename: string): Promise<
   };
 }
 
+export async function inspectLocalMedia(
+  userId: string,
+  filename: string,
+): Promise<{ byteLength: number; mimeType: string }> {
+  if (!/^[a-f0-9-]+\.[a-z0-9]+$/i.test(filename)) throw new Error("Invalid media name");
+  const object = await mediaBucket().head(`users/${userKey(userId)}/media/${filename}`);
+  if (!object) throw new Error("Media not found");
+  return {
+    byteLength: object.size,
+    mimeType: object.httpMetadata?.contentType || mimeForExtension(filename.split(".").pop() || ""),
+  };
+}
+
 async function generateImage(
   requestId: string,
   plane: GenerationPlane,
