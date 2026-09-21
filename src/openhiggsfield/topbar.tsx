@@ -4,11 +4,14 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 
 import { VIEWS, VIEW_LABELS, type GalleryView } from "./data";
-import { AssetsIcon, HeartIcon, ImageIcon, KeyIcon, VideoIcon } from "./icons";
+import { AssetsIcon, DesktopIcon, HeartIcon, ImageIcon, KeyIcon, LandingIcon, MobileIcon, VideoIcon } from "./icons";
 
 const VIEW_ICONS: Record<GalleryView, () => React.ReactNode> = {
   image: () => <ImageIcon />,
   video: () => <VideoIcon />,
+  landing: () => <LandingIcon />,
+  webapp: () => <DesktopIcon />,
+  mobile: () => <MobileIcon />,
   assets: () => <AssetsIcon />,
   favorites: () => <HeartIcon size={15} />,
 };
@@ -37,7 +40,10 @@ export function Topbar({
     let live = true;
     const measure = () => {
       const active = tabs.querySelector<HTMLElement>('[aria-selected="true"]');
-      if (live && active) setThumb({ x: active.offsetLeft, w: active.offsetWidth });
+      if (live && active) {
+        setThumb({ x: active.offsetLeft, w: active.offsetWidth });
+        active.scrollIntoView({ block: "nearest", inline: "nearest" });
+      }
     };
     measure();
     const observer = new ResizeObserver(measure);
@@ -75,7 +81,7 @@ export function Topbar({
     <div className="ohf-topbar">
       <h1 className="ohf-sr">OpenHiggsfield AI — Open source AI studio</h1>
 
-      <div className="ohf-bar ohf-enter-1">
+      <div className="ohf-bar ohf-bar--views ohf-enter-1">
         <div
           className="ohf-tabs"
           role="tablist"

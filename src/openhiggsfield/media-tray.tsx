@@ -8,7 +8,7 @@ import { useImageMedia, useVideoMedia } from "@/generation/stores/media";
 import { uploadMedia } from "@/generation/upload";
 
 import { ROLE_ACCEPT, ROLE_LABELS, ROLE_TAGS, rolesOf } from "./data";
-import { AudioIcon, CloseIcon, VideoIcon } from "./icons";
+import { AssetsIcon, AudioIcon, CloseIcon, VideoIcon } from "./icons";
 import { kindOfFile, loadUploads, mergeUploads, rememberUpload, saveUploads, type UploadRecord } from "./uploads";
 
 function useMedia(model: ModelEntry) {
@@ -33,6 +33,8 @@ export interface MediaTray {
   input: ReactNode;
   /** Set the role the next file takes, then open the OS picker. */
   begin: (role: MediaRole) => void;
+  /** Paste file payloads from the prompt without intercepting ordinary text. */
+  paste: (files: File[]) => Promise<void>;
   /** Make the role's inputs exactly these URLs — the picker hands back the set
       it edited, so one press both attaches and detaches. */
   apply: (role: MediaRole, urls: string[]) => void;
@@ -73,13 +75,18 @@ export function useMediaTray(
   }, [uploadsLoaded, uploads]);
 
   const roles = rolesOf(model);
-  async function onFiles(files: File[]) {
+  async function onFiles(files: File[], directRole?: MediaRole) {
     if (files.length === 0) return;
     onError(null);
     setUploading(true);
     const urls: string[] = [];
     try {
+      const uploadRole = directRole ?? roleRef.current;
       for (const file of files) {
+        if (uploadRole === "video") await validateOmniVideo(file);
+        if (uploadRole === "brief" && file.type !== "application/pdf") {
+          throw new Error("Creative briefs must be PDF files");
+        }
         const uploaded = await uploadMedia(file);
         urls.push(uploaded.url);
         /* The file outlives this run: it joins the shelf the picker offers, so
@@ -104,7 +111,10 @@ export function useMediaTray(
       /* A later file can fail after earlier files have reached local storage.
          Keep those successful uploads selected instead of making the visitor
          hunt for them on the shelf. */
-      if (urls.length > 0) setStaged({ id: crypto.randomUUID(), urls });
+      if (urls.length > 0) {
+        if (directRole) apply(directRole, urls.slice(0, model.roles[directRole] ?? 0));
+        else setStaged({ id: crypto.randomUUID(), urls });
+      }
       setUploading(false);
     }
   }
@@ -149,7 +159,27 @@ export function useMediaTray(
     }
   }
 
-  return { roles, items: media.items, uploads, staged, uploading, input, begin, apply };
+  async function paste(files: File[]): Promise<void> {
+    const first = files[0];
+    if (!first) return;
+    const role = pasteRole(model, first);
+    if (!role) throw new Error(`This model has no input slot for ${first.type || "that file"}`);
+    const cap = model.roles[role] ?? 0;
+    await onFiles(files.slice(0, cap), role);
+  }
+
+  return { roles, items: media.items, uploads, staged, uploading, input, begin, paste, apply };
+}
+
+function pasteRole(model: ModelEntry, file: File): MediaRole | null {
+  if (file.type === "application/pdf" && model.roles.brief) return "brief";
+  if (file.type === "video/mp4" && model.roles.video) return "video";
+  if (file.type.startsWith("image/")) {
+    if (model.roles.reference) return "reference";
+    if (model.roles.start) return "start";
+  }
+  if (file.type.startsWith("audio/") && model.roles.audio) return "audio";
+  return null;
 }
 
 /** Attached inputs, above the prompt — the frames read before the words do. */
@@ -163,9 +193,15 @@ export function MediaStrip({ model }: { model: ModelEntry }) {
       {items.map((item) => (
         <li key={item.id} className="ohf-strip-item">
           <span className="ohf-strip-tile">
-            {item.role === "audio" || item.role === "video" ? (
+            {item.role === "audio" || item.role === "video" || item.role === "brief" ? (
               <span className="ohf-strip-glyph">
-                {item.role === "audio" ? <AudioIcon size={20} /> : <VideoIcon size={20} />}
+                {item.role === "audio" ? (
+                  <AudioIcon size={20} />
+                ) : item.role === "video" ? (
+                  <VideoIcon size={20} />
+                ) : (
+                  <AssetsIcon size={20} />
+                )}
               </span>
             ) : (
               /* Blob-hosted user upload; next/image would proxy an arbitrary
@@ -194,4 +230,25 @@ export function MediaStrip({ model }: { model: ModelEntry }) {
       ))}
     </ul>
   );
+}
+
+async function validateOmniVideo(file: File): Promise<void> {
+  if (file.type !== "video/mp4") throw new Error("Omni video input must be an MP4 file");
+  const duration = await new Promise<number>((resolve, reject) => {
+    const video = document.createElement("video");
+    const url = URL.createObjectURL(file);
+    const finish = (value?: number) => {
+      URL.revokeObjectURL(url);
+      video.removeAttribute("src");
+      video.load();
+      if (value === undefined) reject(new Error("Could not read the MP4 duration"));
+      else resolve(value);
+    };
+    video.preload = "metadata";
+    video.onloadedmetadata = () => finish(video.duration);
+    video.onerror = () => finish();
+    video.src = url;
+  });
+  if (!Number.isFinite(duration) || duration <= 0) throw new Error("Could not read the MP4 duration");
+  if (duration > 10.05) throw new Error("Omni accepts uploaded source videos up to 10 seconds");
 }

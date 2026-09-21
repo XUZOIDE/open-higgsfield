@@ -10,6 +10,7 @@ export type QueuedGeneration = {
   requestId: string;
   statusUrl: string;
   cancelUrl: string;
+  sessionId?: string;
 };
 
 export type GenerationStatus = {
@@ -17,6 +18,8 @@ export type GenerationStatus = {
   requestId: string;
   images?: Array<{ url: string }>;
   video?: { url: string };
+  artifact?: { url: string; mimeType: "text/html" };
+  sessionId?: string;
   usage?: {
     inputTokens: number;
     outputTokens: number;

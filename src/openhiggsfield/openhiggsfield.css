@@ -373,6 +373,15 @@
   border-radius: 15px;
   box-shadow: var(--shadow-2), var(--glint);
 }
+.ohf-bar--views {
+  max-width: min(calc(100vw - 228px), 980px);
+  overflow-x: auto;
+  overflow-y: hidden;
+  scrollbar-width: none;
+}
+.ohf-bar--views::-webkit-scrollbar {
+  display: none;
+}
 
 /* The studio's page heading; the bar carries scope, not brand. */
 .ohf-sr {
@@ -392,6 +401,7 @@
   display: flex;
   align-items: center;
   gap: 2px;
+  width: max-content;
 }
 /* One plate travels between the three scopes and morphs to each label's real
    width, so a switch reads as a single continuous move rather than three
@@ -2734,6 +2744,13 @@
   font-size: 10.5px;
   line-height: 1.45;
 }
+.ohf-asset-doc-label {
+  margin-top: 4px;
+  font-size: 8px;
+  font-weight: 760;
+  letter-spacing: 0.12em;
+  color: var(--tx4);
+}
 
 /* Which slot the picked asset fills — present only where the active mode
    declares more than one, so most models never see this row. */
@@ -3126,6 +3143,16 @@
   height: 100%;
   object-fit: contain;
   animation: ohf-fade 0.3s ease;
+}
+
+.ohf-tile-media--html,
+.ohf-viewer-media--html {
+  border: 0;
+  background: #fff;
+}
+
+.ohf-tile-media--html {
+  pointer-events: none;
 }
 
 .ohf-viewer-side {
@@ -3659,6 +3686,9 @@ a.ohf-btn-solid {
   .ohf-bar {
     height: 42px;
     border-radius: 14px;
+  }
+  .ohf-bar--views {
+    max-width: calc(100vw - 102px);
   }
   /* Where only one of the two can fit, the labels stay: three drawn frames
      read alike at a glance, three words do not. */

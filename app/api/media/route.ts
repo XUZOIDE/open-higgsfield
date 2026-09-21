@@ -16,6 +16,7 @@ const ALLOWED = new Set([
   "video/webm",
   "audio/wav",
   "audio/x-wav",
+  "application/pdf",
 ]);
 
 export async function POST(request: Request): Promise<NextResponse> {

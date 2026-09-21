@@ -1,11 +1,12 @@
 import { browserLegacy, defaultKv, type Kv, type LegacyStore } from "./idb";
-import type { Surface } from "@/generation/catalog";
+import type { CreatorMode, Surface } from "@/generation/catalog";
 
 export type RunStatus = "running" | "completed" | "failed";
 
 export interface RunRecord {
   id: string;
   surface: Surface;
+  creatorMode?: CreatorMode;
   modelId: string;
   modelLabel: string;
   prompt: string;
@@ -13,12 +14,14 @@ export interface RunRecord {
   ratio: string;
   meta: string;
   badge?: string;
-  kind: "image" | "video";
+  kind: "image" | "video" | "html";
   urls: string[];
   status: RunStatus;
   /** Platform request this row is waiting on. Set while status is running so a
       refresh can resume the poll; completed rows keep it for the same id. */
   requestId?: string;
+  /** Persistent Gemini coordinator thread for iterative landing refinements. */
+  sessionId?: string;
   error?: string;
   /** Layered-gradient fallback used while media loads or when a run failed. */
   art: string;
@@ -141,6 +144,12 @@ function isRunRecord(value: unknown): value is RunRecord {
   return (
     typeof record.id === "string" &&
     (record.surface === "image" || record.surface === "video") &&
+    (record.creatorMode === undefined ||
+      record.creatorMode === "image" ||
+      record.creatorMode === "video" ||
+      record.creatorMode === "landing" ||
+      record.creatorMode === "webapp" ||
+      record.creatorMode === "mobile") &&
     typeof record.prompt === "string" &&
     typeof record.ratio === "string" &&
     Array.isArray(record.urls) &&
@@ -149,6 +158,7 @@ function isRunRecord(value: unknown): value is RunRecord {
       (record.status === "running" && typeof record.requestId === "string")) &&
     typeof record.createdAt === "number" &&
     (record.requestId === undefined || typeof record.requestId === "string") &&
+    (record.sessionId === undefined || typeof record.sessionId === "string") &&
     (record.favorite === undefined || typeof record.favorite === "boolean") &&
     (record.settings === undefined ||
       (typeof record.settings === "object" && record.settings !== null))

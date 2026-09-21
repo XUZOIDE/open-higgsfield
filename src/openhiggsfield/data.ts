@@ -1,4 +1,5 @@
-import type { MediaRole, ModelEntry, Surface } from "@/generation/catalog";
+import type { CreatorMode, MediaRole, ModelEntry, Surface } from "@/generation/catalog";
+import { CREATOR_LABELS, CREATOR_MODES } from "@/generation/creator-modes";
 
 export const SURFACES: readonly Surface[] = ["image", "video"];
 
@@ -9,28 +10,31 @@ export const SURFACE_LABELS: Record<Surface, string> = {
 
 /** What the gallery is scoped to. "assets" is every run, both surfaces;
     "favorites" is every run the visitor kept, both surfaces. */
-export type GalleryView = Surface | "assets" | "favorites";
+export type GalleryView = CreatorMode | "assets" | "favorites";
 
 /** Scopes that span both surfaces, so switching to them leaves the model alone. */
 export const CROSS_VIEWS = new Set<GalleryView>(["assets", "favorites"]);
 
-export const VIEWS: readonly GalleryView[] = ["image", "video", "assets", "favorites"];
+export const VIEWS: readonly GalleryView[] = [...CREATOR_MODES, "assets", "favorites"];
 
 export const VIEW_LABELS: Record<GalleryView, string> = {
-  ...SURFACE_LABELS,
+  ...CREATOR_LABELS,
   assets: "Assets",
   favorites: "Favorites",
 };
 
-export const PROMPT_PLACEHOLDERS: Record<Surface, string> = {
+export const PROMPT_PLACEHOLDERS: Record<CreatorMode, string> = {
   image: "Describe the image — subject, style, light, lens…",
   video: "Describe the shot — subject, camera move, light, pacing…",
+  landing: "Describe the landing story — layers, scroll motion, depth, transitions…",
+  webapp: "Describe the product workflow — users, data, screens, states…",
+  mobile: "Describe the mobile flow — platform, key screen, navigation, states…",
 };
 
 /* The pool the empty state draws from. Each line is a whole prompt — subject,
    light, lens or camera move — so a click loads something worth pressing
    Generate on rather than a fragment to finish. */
-export const SAMPLES: Record<Surface, string[]> = {
+export const SAMPLES: Record<CreatorMode, string[]> = {
   image: [
     "Portrait of a beekeeper in a sunlit orchard, medium format film, shallow depth of field",
     "Isometric cutaway of a tiny recording studio, warm tungsten light, matte clay render",
@@ -59,13 +63,28 @@ export const SAMPLES: Record<Surface, string[]> = {
     "Static wide of a train crossing a viaduct at dusk, lit windows, long lens compression",
     "Slow tilt down a glass tower facade to a busy crosswalk, overcast city light",
   ],
+  landing: [
+    "Cinematic fintech landing hero with layered glass cards, a slow camera push and restrained sapphire parallax on scroll",
+    "Editorial climate platform landing with paper textures, topographic depth layers and chapter transitions tied to scroll",
+    "Luxury travel landing where foreground typography, midground mist and distant landscape move at distinct parallax speeds",
+  ],
+  webapp: [
+    "Desktop operations dashboard for a logistics team, dense but calm data hierarchy, route exceptions and a clear resolution workflow",
+    "Collaborative research workspace with source library, split-view annotations, AI synthesis and visible citation states",
+    "Financial reconciliation webapp with transaction matching, audit trail, exception queue and accessible dark mode",
+  ],
+  mobile: [
+    "Native iOS personal finance app with a weekly overview, transaction detail, goal progress and one-handed navigation",
+    "Android field-service app for offline inspections, photo evidence, issue severity and sync status",
+    "Mobile wellbeing companion with a calm home screen, quick check-in, trend detail and privacy-first settings",
+  ],
 };
 
 /** A few of the pool in a fresh order, so two visits are not handed the same
     shelf. Called on the client only — picking during render would give the
     server a different set than the hydrating client. */
-export function pickSamples(surface: Surface, count = 3): string[] {
-  const pool = [...SAMPLES[surface]];
+export function pickSamples(mode: CreatorMode, count = 3): string[] {
+  const pool = [...SAMPLES[mode]];
   for (let i = pool.length - 1; i > 0; i--) {
     const j = Math.floor(Math.random() * (i + 1));
     [pool[i], pool[j]] = [pool[j]!, pool[i]!];
@@ -125,6 +144,7 @@ export const ROLE_LABELS: Record<MediaRole, string> = {
   reference: "Reference",
   video: "Video",
   audio: "Audio",
+  brief: "Instructions PDF",
 };
 
 /* Slate tags for the attachment tiles, where the full label will not fit. */
@@ -134,11 +154,12 @@ export const ROLE_TAGS: Record<MediaRole, string> = {
   reference: "REF",
   video: "VIDEO",
   audio: "AUDIO",
+  brief: "BRIEF",
 };
 
 /* What a role can hold, in the coarser unit the asset library sorts by. The
    accept string above is the file dialog's business; this is the picker's. */
-export type AssetKind = "image" | "video" | "audio";
+export type AssetKind = "image" | "video" | "audio" | "document";
 
 export const ROLE_KINDS: Record<MediaRole, AssetKind> = {
   start: "image",
@@ -146,6 +167,7 @@ export const ROLE_KINDS: Record<MediaRole, AssetKind> = {
   reference: "image",
   video: "video",
   audio: "audio",
+  brief: "document",
 };
 
 /* The picker's confirm button names what it attaches — "Add 2 references",
@@ -156,6 +178,7 @@ const ROLE_PLURALS: Record<MediaRole, string> = {
   reference: "references",
   video: "clips",
   audio: "audio tracks",
+  brief: "instruction PDFs",
 };
 
 export function roleNoun(role: MediaRole, count: number): string {
@@ -169,6 +192,7 @@ export const ROLE_ACCEPT: Record<MediaRole, string> = {
   reference: "image/jpeg,image/png,image/webp,image/gif",
   video: "video/mp4",
   audio: "audio/wav,audio/x-wav",
+  brief: "application/pdf",
 };
 
 export function rolesOf(model: ModelEntry): MediaRole[] {
@@ -208,6 +232,7 @@ const ROLE_PHRASES: Record<MediaRole, string> = {
   reference: "references",
   video: "clips",
   audio: "audio",
+  brief: "PDF briefs",
 };
 
 function joinPhrases(parts: string[]): string {

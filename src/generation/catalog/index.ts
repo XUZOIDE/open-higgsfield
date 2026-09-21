@@ -1,4 +1,4 @@
-import { nanoBanana2, nanoBananaPro, omni11Flash, veo31 } from "./google-media";
+import { landingAgent38, nanoBanana2, nanoBananaPro, omni11Flash, veo31 } from "./google-media";
 import { parseSettings } from "./parse-settings";
 import type { ModelEntry } from "./types";
 
@@ -6,6 +6,7 @@ export const MODELS: readonly ModelEntry[] = [
   nanoBanana2,
   nanoBananaPro,
   omni11Flash,
+  landingAgent38,
   veo31,
 ];
 
@@ -15,5 +16,5 @@ export function getModel(id: string): ModelEntry {
   return model;
 }
 
-export type { GenerationPlane, MediaItem, MediaRole, ModelEntry, PlatformPaths, Surface } from "./types";
+export type { CreatorMode, GenerationPlane, MediaItem, MediaRole, ModelEntry, PlatformPaths, Surface } from "./types";
 export { parseSettings };

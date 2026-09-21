@@ -7,6 +7,18 @@ This fork runs only on `127.0.0.1` and supports:
 - Omni 1.1 Flash (`gemini-omni-1.1-flash-preview`)
 - Veo 3.1 (`veo-3.1-generate-001`)
 
+The top bar exposes five creation workflows: Image, Video, Landing Page,
+Webapp Design and Mobile Design. Landing Page produces motion references for
+scroll and parallax implementation. Webapp and Mobile Design produce UX/UI
+visual references; they do not claim to generate working application code.
+
+Every model accepts an optional PDF creative brief. The server extracts and
+caches a concise brief with Gemini 2.5 Flash, then folds it into the generation
+prompt without replacing the user's request. Omni also accepts one MP4 source
+up to 10 seconds, optionally alongside image references, for editing or
+continuation. Files copied to the clipboard can be pasted directly into the
+prompt; normal text paste remains unchanged.
+
 It uses the Google account and project already selected in the local `gcloud`
 CLI. A loopback-only bridge obtains short-lived OAuth tokens, refreshes them
 after expiry, and never sends them to browser JavaScript. Closing the local app
@@ -57,6 +69,7 @@ bundle and its CSS/JavaScript assets always stay in sync.
 
 ```bash
 pnpm audit
+pnpm test
 pnpm exec tsc --noEmit
 pnpm build
 ```

@@ -4,7 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import type { CSSProperties } from "react";
 
 import { MODELS } from "@/generation/catalog";
-import type { ModelEntry, Surface } from "@/generation/catalog";
+import type { CreatorMode, ModelEntry, Surface } from "@/generation/catalog";
 
 import { swatchFor } from "./artwork";
 import { SURFACE_LABELS, describeModel } from "./data";
@@ -14,11 +14,13 @@ import { ModelIcon, modelIconSrc } from "./model-icon";
 export function ModelPicker({
   selectedId,
   surface,
+  creatorMode,
   onPick,
   onClose,
 }: {
   selectedId: string;
   surface: Surface;
+  creatorMode: CreatorMode;
   onPick: (model: ModelEntry) => void;
   onClose: () => void;
 }) {
@@ -31,7 +33,13 @@ export function ModelPicker({
   }, []);
 
   const query = search.trim().toLowerCase();
-  const catalog = MODELS.filter((model) => model.surface === surface);
+  const catalog = MODELS.filter(
+    (model) =>
+      model.surface === surface &&
+      (creatorMode === "landing"
+        ? model.id === "landing-agent-gemini-3.8-high-omni-1.1"
+        : model.id !== "landing-agent-gemini-3.8-high-omni-1.1"),
+  );
   /* The description is searchable too: "references", "4K" and "audio" are how
      a visitor asks for a model whose name they do not remember. */
   const models = catalog.filter(

@@ -8,7 +8,7 @@ import {
   submitGeneration,
 } from "@/generation/actions";
 import { MODELS, getModel } from "@/generation/catalog";
-import type { Surface } from "@/generation/catalog";
+import type { CreatorMode, Surface } from "@/generation/catalog";
 import { assemblePlane } from "@/generation/plane";
 import { MissingCredentialsError, type GenerationStatus } from "@/generation/platform";
 import { POLL_DEADLINE_MS, stopWatching, watchRequest } from "@/generation/poll";
@@ -45,6 +45,7 @@ export interface ActiveRun {
       a time as its own request settles. */
   id: string;
   surface: Surface;
+  creatorMode: CreatorMode;
   modelLabel: string;
   ratio: string;
   startedAt: number;
@@ -52,6 +53,7 @@ export interface ActiveRun {
 
 type RunDraft = {
   surface: Surface;
+  creatorMode: CreatorMode;
   modelId: string;
   modelLabel: string;
   prompt: string;
@@ -59,6 +61,7 @@ type RunDraft = {
   meta: string;
   badge?: string;
   settings?: Record<string, unknown>;
+  sessionId?: string;
   createdAt: number;
 };
 
@@ -75,6 +78,7 @@ function rowId(requestId: string, offset: number, count: number): string {
 function draftOf(record: RunRecord): RunDraft {
   return {
     surface: record.surface,
+    creatorMode: record.creatorMode ?? record.surface,
     modelId: record.modelId,
     modelLabel: record.modelLabel,
     prompt: record.prompt,
@@ -82,6 +86,7 @@ function draftOf(record: RunRecord): RunDraft {
     meta: record.meta,
     badge: record.badge,
     settings: record.settings,
+    sessionId: record.sessionId,
     createdAt: record.createdAt,
   };
 }
@@ -93,25 +98,29 @@ function runningRows(requestId: string, count: number, draft: RunDraft): RunReco
       id,
       requestId,
       surface: draft.surface,
+      creatorMode: draft.creatorMode,
       modelId: draft.modelId,
       modelLabel: draft.modelLabel,
       prompt: draft.prompt,
       ratio: draft.ratio,
       meta: draft.meta,
       badge: draft.badge,
-      kind: draft.surface,
+      kind: draft.creatorMode === "landing" ? "html" : draft.surface,
       urls: [],
       status: "running",
       art: artFor(draft.surface, hueOf(id), id),
       createdAt: draft.createdAt,
       settings: draft.settings,
+      sessionId: draft.sessionId,
     };
   });
 }
 
 function terminalRows(requestId: string, draft: RunDraft, status: GenerationStatus): RunRecord[] {
   const urls =
-    status.images?.map((image) => image.url) ?? (status.video ? [status.video.url] : []);
+    status.artifact
+      ? [status.artifact.url]
+      : status.images?.map((image) => image.url) ?? (status.video ? [status.video.url] : []);
   const completed = status.status === "completed" && urls.length > 0;
   const base = status.requestId || requestId;
   const failure = completed ? undefined : failureText(status);
@@ -122,19 +131,21 @@ function terminalRows(requestId: string, draft: RunDraft, status: GenerationStat
       id,
       requestId: base,
       surface: draft.surface,
+      creatorMode: draft.creatorMode,
       modelId: draft.modelId,
       modelLabel: draft.modelLabel,
       prompt: draft.prompt,
       ratio: draft.ratio,
       meta: draft.meta,
       badge: draft.badge,
-      kind: draft.surface,
+      kind: status.artifact ? "html" : draft.surface,
       urls: url ? [url] : [],
       status: completed ? "completed" : "failed",
       error: failure,
       art: artFor(draft.surface, hueOf(id), id),
       createdAt: draft.createdAt,
       settings: draft.settings,
+      sessionId: status.sessionId ?? draft.sessionId,
     };
   });
 }
@@ -164,8 +175,10 @@ function describeError(caught: unknown): string {
 
 export function OpenHiggsfieldApp({ fontClassName = "" }: { fontClassName?: string }) {
   const surface = useActive((state) => state.surface);
+  const creatorMode = useActive((state) => state.creatorMode);
   const modelId = useActive((state) => state.model);
   const setModel = useActive((state) => state.setModel);
+  const setCreatorMode = useActive((state) => state.setCreatorMode);
   const model = getModel(modelId);
   const setSettings = useSettings((state) => state.set);
 
@@ -174,7 +187,7 @@ export function OpenHiggsfieldApp({ fontClassName = "" }: { fontClassName?: stri
   const [error, setError] = useState<string | null>(null);
   const [freshIds, setFreshIds] = useState<string[]>([]);
   const [viewerId, setViewerId] = useState<string | null>(null);
-  const [view, setView] = useState<GalleryView>(surface);
+  const [view, setView] = useState<GalleryView>(creatorMode);
   const [focusNonce, setFocusNonce] = useState(0);
   const [historyLoaded, setHistoryLoaded] = useState(false);
   /* Deleting drops the only copy of a run — the platform's result URLs are not
@@ -198,14 +211,15 @@ export function OpenHiggsfieldApp({ fontClassName = "" }: { fontClassName?: stri
   const freshTimers = useRef<number[]>([]);
   const recoveryStarted = useRef(false);
   const submitting = useRef(false);
+  const landingSessionRef = useRef<string | null>(null);
   const historyRef = useRef(history);
   historyRef.current = history;
 
-  /* The model picker can cross surfaces, so the scope follows it — unless the
-     visitor parked on a scope that spans both. */
+  /* The model picker can cross surfaces, while a specialised creator keeps its
+     own surface-compatible model. Cross-library views leave the creator alone. */
   useEffect(() => {
-    setView((current) => (CROSS_VIEWS.has(current) ? current : surface));
-  }, [surface]);
+    setView((current) => (CROSS_VIEWS.has(current) ? current : creatorMode));
+  }, [creatorMode]);
 
   /* Read once on mount. A load that finishes after unmount must not mark the
      next mount hydrated, or the empty initial list is written over the store. */
@@ -227,6 +241,14 @@ export function OpenHiggsfieldApp({ fontClassName = "" }: { fontClassName?: stri
   useEffect(() => {
     if (historyLoaded) void saveHistory(history);
   }, [historyLoaded, history]);
+
+  useEffect(() => {
+    try {
+      landingSessionRef.current = window.localStorage.getItem("openhiggsfield.landing-session.v1");
+    } catch {
+      landingSessionRef.current = null;
+    }
+  }, []);
 
   useEffect(() => {
     if (!historyLoaded) return;
@@ -324,6 +346,7 @@ export function OpenHiggsfieldApp({ fontClassName = "" }: { fontClassName?: stri
           const entry = getModel(session.modelId);
           const draft: RunDraft = {
             surface: session.surface,
+            creatorMode: session.creatorMode,
             modelId: session.modelId,
             modelLabel: session.modelLabel,
             prompt: session.title,
@@ -334,6 +357,7 @@ export function OpenHiggsfieldApp({ fontClassName = "" }: { fontClassName?: stri
             meta: metaOf(entry, session.settings),
             badge: session.surface === "video" ? durationBadge(session.settings) : undefined,
             settings: session.settings,
+            sessionId: session.sessionId,
             createdAt: Date.parse(session.createdAt) || Date.now(),
           };
           if (status.status === "completed" || status.status === "failed") {
@@ -371,18 +395,22 @@ export function OpenHiggsfieldApp({ fontClassName = "" }: { fontClassName?: stri
   const visible = useMemo(() => {
     if (view === "assets") return history;
     if (view === "favorites") return history.filter((record) => record.favorite === true);
-    return history.filter((record) => record.surface === view);
+    if (view === "image" || view === "video") {
+      return history.filter(
+        (record) => record.surface === view && (record.creatorMode === undefined || record.creatorMode === view),
+      );
+    }
+    return history.filter((record) => record.creatorMode === view);
   }, [history, view]);
 
   const switchView = useCallback(
     (next: GalleryView) => {
       setView(next);
       galleryRef.current?.scrollTo({ top: 0 });
-      if (CROSS_VIEWS.has(next) || next === surface) return;
-      const first = MODELS.find((entry) => entry.surface === next);
-      if (first) setModel(first.id);
+      if (next === "assets" || next === "favorites") return;
+      setCreatorMode(next);
     },
-    [setModel, surface],
+    [setCreatorMode],
   );
 
   /* The UI disables Generate while a paid run is active. This synchronous
@@ -394,7 +422,10 @@ export function OpenHiggsfieldApp({ fontClassName = "" }: { fontClassName?: stri
       setError("Local gcloud access is unavailable. Check the Google connection in the top bar.");
       return;
     }
-    const assembled = assemblePlane();
+    let assembled = assemblePlane();
+    if (assembled.creatorMode === "landing" && landingSessionRef.current) {
+      assembled = { ...assembled, sessionId: landingSessionRef.current };
+    }
     if (!assembled.prompt.text.trim()) return;
     submitting.current = true;
     setPreparingGeneration(true);
@@ -426,14 +457,17 @@ export function OpenHiggsfieldApp({ fontClassName = "" }: { fontClassName?: stri
        submitted once per result. Either way the grid opens the same number of
        skeletons, and each request clears the ones it owns. */
     const native = countSetting(entry);
-    const expected = native
-      ? Math.max(1, Number(plane.settings[native.key]) || 1)
-      : useActive.getState().batch;
+    const expected = plane.creatorMode === "landing"
+      ? 1
+      : native
+        ? Math.max(1, Number(plane.settings[native.key]) || 1)
+        : useActive.getState().batch;
     const startedAt = Date.now();
     const seq = ++press.current;
     const pending: ActiveRun[] = Array.from({ length: expected }, (_, index) => ({
       id: `pending-${seq}-${index}`,
       surface: entry.surface,
+      creatorMode: plane.creatorMode,
       modelLabel: entry.label,
       ratio,
       startedAt,
@@ -443,6 +477,7 @@ export function OpenHiggsfieldApp({ fontClassName = "" }: { fontClassName?: stri
       : pending.map((slot) => ({ skeletons: [slot.id] }));
     const draft: RunDraft = {
       surface: entry.surface,
+      creatorMode: plane.creatorMode,
       modelId: entry.id,
       modelLabel: entry.label,
       prompt: plane.prompt.text.trim(),
@@ -450,6 +485,7 @@ export function OpenHiggsfieldApp({ fontClassName = "" }: { fontClassName?: stri
       meta,
       badge,
       settings: plane.settings,
+      sessionId: plane.sessionId,
       createdAt: startedAt,
     };
 
@@ -458,13 +494,29 @@ export function OpenHiggsfieldApp({ fontClassName = "" }: { fontClassName?: stri
         const submitted = await submitGeneration(plane);
         if (!submitted.ok) throw new Error(submitted.error);
         const queued = submitted.queued;
+        const effectiveSettings = submitted.settings;
+        const queuedDraft = {
+          ...draft,
+          settings: effectiveSettings,
+          meta: metaOf(entry, effectiveSettings),
+          badge: entry.surface === "video" ? durationBadge(effectiveSettings) : undefined,
+          sessionId: queued.sessionId ?? draft.sessionId,
+        };
+        if (queued.sessionId) {
+          landingSessionRef.current = queued.sessionId;
+          try {
+            window.localStorage.setItem("openhiggsfield.landing-session.v1", queued.sessionId);
+          } catch {
+            // The server still holds the session; only browser convenience is lost.
+          }
+        }
         setHistory((prev) => {
-          const next = [...runningRows(queued.requestId, slot.skeletons.length, draft), ...prev];
+          const next = [...runningRows(queued.requestId, slot.skeletons.length, queuedDraft), ...prev];
           void saveHistory(next);
           return next;
         });
         setRuns((prev) => prev.filter((active) => !slot.skeletons.includes(active.id)));
-        await resume(queued.requestId, draft, slot.skeletons.length);
+        await resume(queued.requestId, queuedDraft, slot.skeletons.length);
       } catch (caught) {
         if (!alive.current) return;
         const message = describeError(caught);
@@ -493,6 +545,14 @@ export function OpenHiggsfieldApp({ fontClassName = "" }: { fontClassName?: stri
      re-render a different picture from the same prompt. */
   const retry = useCallback(
     (record: RunRecord) => {
+      if (record.creatorMode === "landing" && record.sessionId) {
+        landingSessionRef.current = record.sessionId;
+        try {
+          window.localStorage.setItem("openhiggsfield.landing-session.v1", record.sessionId);
+        } catch {
+          // Refinement still works for this mount through the ref.
+        }
+      }
       const canRecheck =
         record.status === "failed" &&
         Boolean(record.requestId) &&
@@ -512,6 +572,7 @@ export function OpenHiggsfieldApp({ fontClassName = "" }: { fontClassName?: stri
         return;
       }
       if (MODELS.some((entry) => entry.id === record.modelId)) {
+        setCreatorMode(record.creatorMode ?? record.surface);
         setModel(record.modelId);
         if (record.settings) setSettings(record.modelId, record.settings);
       }
@@ -520,7 +581,7 @@ export function OpenHiggsfieldApp({ fontClassName = "" }: { fontClassName?: stri
       setError(null);
       setFocusNonce((n) => n + 1);
     },
-    [resume, setModel, setSettings],
+    [resume, setCreatorMode, setModel, setSettings],
   );
 
   const toggleFavorite = useCallback((record: RunRecord) => {
@@ -718,7 +779,11 @@ export function OpenHiggsfieldApp({ fontClassName = "" }: { fontClassName?: stri
   const nextRun = viewerId ? stepRun(viewable, viewerId, 1) : null;
 
   const runsHere = useMemo(
-    () => runs.filter((active) => view === "assets" || active.surface === view),
+    () => runs.filter((active) => {
+      if (view === "assets") return true;
+      if (view === "favorites") return false;
+      return active.creatorMode === view;
+    }),
     [runs, view],
   );
   const busy = preparingGeneration || runs.length > 0 || history.some((record) => record.status === "running");
@@ -754,6 +819,7 @@ export function OpenHiggsfieldApp({ fontClassName = "" }: { fontClassName?: stri
 
           <Composer
             surface={surface}
+            creatorMode={creatorMode}
             model={model}
             generating={busy}
             error={error}

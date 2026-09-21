@@ -4,6 +4,8 @@ import { env } from "cloudflare:workers";
 import { createHash } from "node:crypto";
 
 import type { GenerationPlane } from "./catalog/types";
+import { creatorForSurface, isCreatorMode } from "./creator-modes";
+import type { CreatorMode } from "./catalog/types";
 import type { GenerationStatus } from "./platform";
 
 export type DailyCost = {
@@ -37,6 +39,8 @@ export type OpenCostSession = {
   modelId: string;
   modelLabel: string;
   surface: "image" | "video";
+  creatorMode: CreatorMode;
+  sessionId?: string;
   createdAt: string;
   settings: Record<string, unknown>;
 };
@@ -67,7 +71,11 @@ export async function createCostSession(
       modelLabel,
       plane.model.includes("image") ? "image" : "video",
       now.toISOString(),
-      JSON.stringify(plane.settings),
+      JSON.stringify({
+        ...plane.settings,
+        __creatorMode: plane.creatorMode,
+        ...(plane.sessionId ? { __landingSessionId: plane.sessionId } : {}),
+      }),
     )
     .run();
 }
@@ -78,7 +86,7 @@ export async function updateCostSession(
 ): Promise<void> {
   await ensureSchema();
   const usage = status.usage;
-  const resultUrl = status.images?.[0]?.url ?? status.video?.url ?? null;
+  const resultUrl = status.artifact?.url ?? status.images?.[0]?.url ?? status.video?.url ?? null;
   const error = typeof status.error === "string" ? status.error : status.error ? JSON.stringify(status.error) : null;
   await database()
     .prepare(
@@ -158,10 +166,16 @@ export async function listOpenCostSessions(userId: string): Promise<OpenCostSess
     )
     .bind(userId)
     .all<Omit<OpenCostSession, "settings"> & { settingsJson: string }>();
-  return rows.results.map(({ settingsJson, ...row }) => ({
-    ...row,
-    settings: parseStoredSettings(settingsJson),
-  }));
+  return rows.results.map(({ settingsJson, ...row }) => {
+    const stored = parseStoredSettings(settingsJson);
+    const creatorMode = isCreatorMode(stored.__creatorMode)
+      ? stored.__creatorMode
+      : creatorForSurface(row.surface);
+    delete stored.__creatorMode;
+    const sessionId = typeof stored.__landingSessionId === "string" ? stored.__landingSessionId : undefined;
+    delete stored.__landingSessionId;
+    return { ...row, creatorMode, sessionId, settings: stored };
+  });
 }
 
 export async function deleteCostSession(userId: string, id: number): Promise<void> {

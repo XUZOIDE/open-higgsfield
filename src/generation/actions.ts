@@ -5,6 +5,7 @@ import { randomUUID } from "node:crypto";
 import { currentUserId } from "./current-user";
 import { getModel, parseSettings } from "./catalog";
 import type { GenerationPlane } from "./catalog/types";
+import { CREATOR_SURFACES, creatorForSurface, isCreatorMode } from "./creator-modes";
 import {
   getGcloudCredentials,
   getGcloudStatus,
@@ -18,7 +19,7 @@ import {
   type OpenCostSession,
   updateCostSession,
 } from "./session-store";
-import { getVertexStatus, submitVertexGeneration } from "./vertex";
+import { getVertexStatus, normalizeOmniSourceDuration, submitVertexGeneration } from "./vertex";
 
 export async function hasPlatformCredentials() {
   return (await getGcloudStatus()).available;
@@ -42,17 +43,31 @@ export async function saveGeneratedMediaBatch(data: unknown) {
 
 export async function submitGeneration(plane: GenerationPlane) {
   const model = getModel(plane.model);
-  const parsed: GenerationPlane = {
+  const creatorMode = isCreatorMode(plane.creatorMode) ? plane.creatorMode : creatorForSurface(model.surface);
+  if (CREATOR_SURFACES[creatorMode] !== model.surface) throw new Error("Creator mode does not match the selected model");
+  let parsed: GenerationPlane = {
     ...plane,
+    creatorMode,
     settings: parseSettings(model, plane.settings),
+    ...(creatorMode === "landing"
+      ? { sessionId: validSessionId(plane.sessionId) ? plane.sessionId : randomUUID() }
+      : {}),
   };
   const userId = await currentUserId();
+  if (
+    parsed.media.video?.length &&
+    (parsed.model === "gemini-omni-1.1-flash-preview" ||
+      parsed.model === "landing-agent-gemini-3.8-high-omni-1.1")
+  ) {
+    parsed = await normalizeOmniSourceDuration(parsed, userId);
+  }
   const requestId = randomUUID();
   await createCostSession(userId, parsed, requestId, model.label);
   try {
     const credentials = await getGcloudCredentials();
     return {
       ok: true as const,
+      settings: parsed.settings,
       queued: await submitVertexGeneration(parsed, credentials.accessToken, credentials.projectId, userId, requestId),
     };
   } catch (caught) {
@@ -66,6 +81,10 @@ export async function submitGeneration(plane: GenerationPlane) {
        the useful message with its generic minified server-action error. */
     return { ok: false as const, error };
   }
+}
+
+function validSessionId(value: unknown): value is string {
+  return typeof value === "string" && /^[a-f0-9-]{36}$/i.test(value);
 }
 
 /** Every request in flight, answered in one round trip. Next dispatches server

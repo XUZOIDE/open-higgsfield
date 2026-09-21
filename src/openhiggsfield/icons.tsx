@@ -38,6 +38,34 @@ export function VideoIcon({ size = 16 }: IconProps) {
   );
 }
 
+export function LandingIcon({ size = 16 }: IconProps) {
+  return (
+    <svg {...base(size)}>
+      <rect x="1.7" y="2" width="12.6" height="12" rx="2.4" />
+      <path d="M1.9 5.1h12.2M4 3.55h.01M6 3.55h.01" />
+      <path d="M4.2 11.3c1.5-3.1 3.2-3.1 4.2-1.5 1-2 2.1-2.8 3.4-1.9" />
+    </svg>
+  );
+}
+
+export function DesktopIcon({ size = 16 }: IconProps) {
+  return (
+    <svg {...base(size)}>
+      <rect x="1.5" y="2.1" width="13" height="9.1" rx="2.1" />
+      <path d="M5.3 14h5.4M8 11.2V14M4.1 5h2.7M4.1 7.5h7.8" />
+    </svg>
+  );
+}
+
+export function MobileIcon({ size = 16 }: IconProps) {
+  return (
+    <svg {...base(size)}>
+      <rect x="4.15" y="1.2" width="7.7" height="13.6" rx="2.2" />
+      <path d="M6.5 3.3h3M7.4 12.7h1.2" />
+    </svg>
+  );
+}
+
 export function AudioIcon({ size = 16 }: IconProps) {
   return (
     <svg {...base(size)}>

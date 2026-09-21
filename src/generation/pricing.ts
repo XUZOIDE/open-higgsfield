@@ -2,7 +2,7 @@ import "server-only";
 
 import type { GenerationStatus } from "./platform";
 
-type Usage = NonNullable<GenerationStatus["usage"]>;
+export type Usage = NonNullable<GenerationStatus["usage"]>;
 
 const FALLBACK_BRL_PER_USD = 5.4;
 const PRICING_DATE = "2026-09-20";
@@ -37,6 +37,41 @@ export async function omniUsage(response: Record<string, unknown>): Promise<Usag
 export async function veoUsage(durationSeconds: number): Promise<Usage> {
   // Veo 3.1 with audio is billed at USD 0.40 per generated second for 720p/1080p.
   return moneyUsage(0, 0, 0, durationSeconds, "seconds", durationSeconds * 0.4);
+}
+
+export async function briefUsage(response: Record<string, unknown>): Promise<Usage> {
+  const metadata = record(response.usageMetadata);
+  const inputTokens = integer(metadata.promptTokenCount);
+  const outputTokens = integer(metadata.candidatesTokenCount);
+  const totalTokens = integer(metadata.totalTokenCount) || inputTokens + outputTokens;
+  const usd = (inputTokens * 0.3 + outputTokens * 2.5) / 1_000_000;
+  return moneyUsage(inputTokens, outputTokens, totalTokens, totalTokens, "tokens", usd);
+}
+
+export async function gemini38Usage(response: Record<string, unknown>): Promise<Usage> {
+  const usage = record(response.usage);
+  const metadata = record(response.usageMetadata);
+  const inputTokens = integer(usage.total_input_tokens) || integer(metadata.promptTokenCount);
+  const outputTokens = integer(usage.total_output_tokens) || integer(metadata.candidatesTokenCount);
+  const totalTokens = integer(usage.total_tokens) || integer(metadata.totalTokenCount) || inputTokens + outputTokens;
+  const usd = (inputTokens * 0.75 + outputTokens * 3.75) / 1_000_000;
+  return moneyUsage(inputTokens, outputTokens, totalTokens, totalTokens, "tokens", usd);
+}
+
+export function combineUsage(primary: Usage, extra?: Usage): Usage {
+  if (!extra) return primary;
+  const sameUnit = primary.unitLabel === extra.unitLabel;
+  return {
+    inputTokens: primary.inputTokens + extra.inputTokens,
+    outputTokens: primary.outputTokens + extra.outputTokens,
+    totalTokens: primary.totalTokens + extra.totalTokens,
+    billableUnits: sameUnit ? primary.billableUnits + extra.billableUnits : primary.billableUnits,
+    unitLabel: primary.unitLabel,
+    usdMicros: primary.usdMicros + extra.usdMicros,
+    brlMicros: primary.brlMicros + extra.brlMicros,
+    brlPerUsdMicros: primary.brlPerUsdMicros || extra.brlPerUsdMicros,
+    pricingDate: PRICING_DATE,
+  };
 }
 
 async function moneyUsage(

@@ -65,17 +65,25 @@ export function AssetPicker({
 }) {
   const roles = rolesOf(model);
   const hasInputModes = Boolean(model.roles.start && model.roles.end && model.roles.reference);
-  const initialMode: InputMode = items.some((item) => item.role === "reference")
-    ? "references"
-    : "frames";
+  const initialMode: InputMode = items.some(
+    (item) => item.role === "reference" || item.role === "video",
+  )
+      ? "references"
+      : "frames";
   const initialRole: MediaRole =
-    hasInputModes && initialMode === "references" ? "reference" : defaultRole(model);
+    hasInputModes && initialMode === "references"
+      ? items.some((item) => item.role === "reference")
+        ? "reference"
+        : items.some((item) => item.role === "video")
+          ? "video"
+          : "reference"
+        : defaultRole(model);
   const [mode, setMode] = useState<InputMode>(initialMode);
   const [role, setRole] = useState<MediaRole>(initialRole);
   const activeRoles = hasInputModes
     ? mode === "references"
-      ? (["reference"] as MediaRole[])
-      : (["start", "end"] as MediaRole[])
+      ? (["reference", "video", "brief"] as MediaRole[])
+        : (["start", "end", "brief"] as MediaRole[])
     : roles;
   /* null until the visitor picks a shelf: the panel opens on whichever one
      actually holds something, so someone who has generated all day and
@@ -143,6 +151,7 @@ export function AssetPicker({
       return;
     }
     onApply("reference", []);
+    onApply("video", []);
     pickRole("start");
   }
 
@@ -296,7 +305,7 @@ export function AssetPicker({
           <p className="ohf-input-mode-help">
             {mode === "frames"
               ? "Lock the opening and ending shots; Omni creates the connection between them."
-              : "Add up to 5 images for subject and style guidance. Their order is not a timeline."}
+              : "Mix up to 5 PNG/JPG references with 1 MP4 up to 10 seconds. They guide the result creatively, not as a start/end timeline."}
           </p>
         </div>
       )}
@@ -324,6 +333,12 @@ export function AssetPicker({
             );
           })}
         </div>
+      )}
+
+      {role === "brief" && (
+        <p className="ohf-input-mode-help">
+          Optional: attach a PDF containing brand rules, required copy or production directions. The app reads it and quietly adds those instructions to your prompt; it does not generate a separate brief.
+        </p>
       )}
 
       <div className="ohf-assets-body ohf-scroll">
@@ -468,6 +483,11 @@ const AssetTile = memo(function AssetTile({
       ) : asset.kind === "audio" ? (
         <span className="ohf-asset-glyph">
           <AudioIcon size={20} />
+        </span>
+      ) : asset.kind === "document" ? (
+        <span className="ohf-asset-glyph">
+          <AssetsIcon size={20} />
+          <span className="ohf-asset-doc-label">PDF</span>
         </span>
       ) : (
         /* Blob and platform CDN hosts both; next/image would need every

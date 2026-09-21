@@ -205,7 +205,14 @@ export function Viewer({
           >
             <span className="ohf-viewer-art" style={{ background: item.art }} />
             {url ? (
-              item.kind === "video" ? (
+              item.kind === "html" ? (
+                <iframe
+                  className="ohf-viewer-media ohf-viewer-media--html"
+                  src={url}
+                  title={item.prompt}
+                  sandbox="allow-scripts"
+                />
+              ) : item.kind === "video" ? (
                 <video
                   ref={measure}
                   className="ohf-viewer-media"
@@ -286,6 +293,12 @@ export function Viewer({
                   <dt>Created</dt>
                   <dd>{CREATED.format(item.createdAt)}</dd>
                 </div>
+                {item.sessionId && (
+                  <div className="ohf-viewer-fact">
+                    <dt>Session</dt>
+                    <dd>{item.sessionId.slice(0, 8)}</dd>
+                  </div>
+                )}
               </dl>
             </section>
           </div>
@@ -299,7 +312,7 @@ export function Viewer({
               onClick={() => leave(onReuse)}
             >
               <RetryIcon />
-              Recreate
+              {item.kind === "html" ? "Refine this session" : "Recreate"}
             </button>
             {/* Names the refusal and the way past it: the same press, now
                 falling through to the anchor's own navigation, hands the file
@@ -310,6 +323,17 @@ export function Viewer({
               </p>
             )}
             <div className="ohf-viewer-foot-row">
+              {url && item.kind === "html" && (
+                <a
+                  className="ohf-btn-solid"
+                  href={url}
+                  target="_blank"
+                  rel="noreferrer"
+                >
+                  <OpenOutIcon />
+                  Open site
+                </a>
+              )}
               {url && (
                 <a
                   className="ohf-btn-solid ohf-viewer-download"

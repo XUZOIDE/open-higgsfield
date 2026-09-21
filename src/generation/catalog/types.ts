@@ -1,5 +1,6 @@
 export type Surface = "image" | "video";
-export type MediaRole = "start" | "end" | "reference" | "video" | "audio";
+export type CreatorMode = "image" | "video" | "landing" | "webapp" | "mobile";
+export type MediaRole = "start" | "end" | "reference" | "video" | "audio" | "brief";
 
 export type MediaItem = {
   id: string;
@@ -31,6 +32,9 @@ export type ModelEntry = {
 
 export type GenerationPlane = {
   model: string;
+  creatorMode: CreatorMode;
+  /** Persistent coordinator thread used by iterative landing-page builds. */
+  sessionId?: string;
   prompt: { text: string };
   media: Partial<Record<MediaRole, MediaItem[]>>;
   settings: Record<string, unknown>;

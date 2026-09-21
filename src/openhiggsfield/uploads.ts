@@ -102,6 +102,7 @@ export function rememberUpload(
     picker's tabs are cut along. Anything unrecognised is treated as an image —
     the upload allow-list admits nothing else that could reach here. */
 export function kindOfFile(file: File): AssetKind {
+  if (file.type === "application/pdf") return "document";
   if (file.type.startsWith("video/")) return "video";
   if (file.type.startsWith("audio/")) return "audio";
   return "image";
@@ -119,7 +120,7 @@ function coerceUpload(value: unknown): UploadRecord | null {
     return null;
   }
   const kind =
-    record.kind === "video" || record.kind === "audio" || record.kind === "image"
+    record.kind === "video" || record.kind === "audio" || record.kind === "image" || record.kind === "document"
       ? record.kind
       : "image";
   return { id: record.id, url: record.url, kind, name: record.name, createdAt: record.createdAt };

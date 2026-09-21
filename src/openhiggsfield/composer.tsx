@@ -4,7 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import type { CSSProperties, ReactNode } from "react";
 
 import { parseSettings } from "@/generation/catalog";
-import type { ModelEntry, Surface } from "@/generation/catalog";
+import type { CreatorMode, ModelEntry, Surface } from "@/generation/catalog";
 import { MAX_BATCH, useActive } from "@/generation/stores/active";
 import { useImagePrompt, useVideoPrompt } from "@/generation/stores/prompt";
 import { useSettings } from "@/generation/stores/settings";
@@ -47,6 +47,7 @@ function popoverWidth(id: string, model: ModelEntry): number {
 
 export function Composer({
   surface,
+  creatorMode,
   model,
   generating,
   error,
@@ -59,6 +60,7 @@ export function Composer({
   onGenerate,
 }: {
   surface: Surface;
+  creatorMode: CreatorMode;
   model: ModelEntry;
   generating: boolean;
   error: string | null;
@@ -102,7 +104,7 @@ export function Composer({
      per result by the studio. Either way the control means "results per press",
      so the model's own count key never also appears as a settings pill. */
   const native = countSetting(model);
-  const counts = native ? native.counts : STUDIO_COUNTS;
+  const counts = creatorMode === "landing" ? [1] : native ? native.counts : STUDIO_COUNTS;
   const batchValue = native ? Number(values[native.key]) || counts[0]! : batch;
   const settingKeys = Object.keys(model.settings).filter((key) => key !== native?.key);
 
@@ -270,6 +272,7 @@ export function Composer({
           <ModelPicker
             selectedId={model.id}
             surface={surface}
+            creatorMode={creatorMode}
             onPick={(next) => {
               setModel(next.id);
               setOverlay(null);
@@ -320,11 +323,19 @@ export function Composer({
                 className="ohf-prompt"
                 rows={1}
                 value={prompt.text}
-                placeholder={PROMPT_PLACEHOLDERS[surface]}
+                placeholder={PROMPT_PLACEHOLDERS[creatorMode]}
                 aria-label="Prompt"
                 onPointerDown={() => setOverlay(null)}
                 onFocus={() => setOverlay(null)}
                 onChange={(event) => prompt.setText(event.target.value)}
+                onPaste={(event) => {
+                  const files = Array.from(event.clipboardData.files);
+                  if (files.length === 0) return;
+                  event.preventDefault();
+                  void tray.paste(files).catch((caught) => {
+                    onError(caught instanceof Error ? `Paste failed — ${caught.message}.` : "Paste failed.");
+                  });
+                }}
                 onKeyDown={(event) => {
                   if (event.key === "Enter" && (event.metaKey || event.ctrlKey)) {
                     event.preventDefault();
@@ -366,7 +377,9 @@ export function Composer({
                   />
                 ))}
 
-                <BatchStepper value={batchValue} counts={counts} onChange={setBatchValue} />
+                {creatorMode !== "landing" && (
+                  <BatchStepper value={batchValue} counts={counts} onChange={setBatchValue} />
+                )}
               </div>
 
               <span className="ohf-generate-slot ohf-tip ohf-tip--end" data-tip={generateTip}>

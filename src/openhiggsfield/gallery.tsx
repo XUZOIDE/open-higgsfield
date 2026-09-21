@@ -30,6 +30,18 @@ const EMPTY: Record<GalleryView, { title: string; hint: string }> = {
     title: "Your video runs land here",
     hint: "Describe the shot below, pick a model, press Generate. Every finished run stays in this browser.",
   },
+  landing: {
+    title: "Your standalone landing sessions land here",
+    hint: "Describe the site or paste its URL. Gemini 3.8 coordinates Omni, builds the HTML/CSS/JS and keeps refining the same session.",
+  },
+  webapp: {
+    title: "Your webapp concepts land here",
+    hint: "Describe the workflow, users and states. The result is a desktop UX/UI reference, not generated code.",
+  },
+  mobile: {
+    title: "Your mobile concepts land here",
+    hint: "Describe the app flow, platform and key screen. The result is a mobile UX/UI reference, not generated code.",
+  },
   assets: {
     title: "Nothing generated yet",
     hint: "Image and video runs both land in this grid and stay in this browser.",
@@ -65,6 +77,7 @@ function slotsOf(runs: ActiveRun[], items: RunRecord[]): Slot[] {
         run: {
           id: item.id,
           surface: item.surface,
+          creatorMode: item.creatorMode ?? item.surface,
           modelLabel: item.modelLabel,
           ratio: item.ratio,
           startedAt: item.createdAt,
@@ -216,7 +229,16 @@ const Tile = memo(function Tile({
       }}
     >
       {poster &&
-        (item.kind === "video" ? (
+        (item.kind === "html" ? (
+          <iframe
+            className="ohf-tile-media ohf-tile-media--html"
+            src={poster}
+            title={item.prompt}
+            sandbox="allow-scripts"
+            loading="lazy"
+            tabIndex={-1}
+          />
+        ) : item.kind === "video" ? (
           <video
             ref={videoRef}
             className="ohf-tile-media"
@@ -256,6 +278,9 @@ const Tile = memo(function Tile({
           <PlayBadgeIcon />
           {item.badge}
         </span>
+      )}
+      {item.kind === "html" && (
+        <span className="ohf-tile-badge">HTML</span>
       )}
       {/* The run signs itself only while the card is under the cursor, the same
           bargain the action rail makes — an un-hovered grid is nothing but the
@@ -512,7 +537,8 @@ function Empty({
      wrote. Until the picks land the server's three hold their space unseen, so
      the invitation never jumps up the panel to make room for them. */
   const [samples, setSamples] = useState<string[] | null>(null);
-  useEffect(() => setSamples(pickSamples(surface)), [surface]);
+  const sampleMode = view === "assets" || view === "favorites" ? surface : view;
+  useEffect(() => setSamples(pickSamples(sampleMode)), [sampleMode]);
 
   return (
     <div className="ohf-empty">
@@ -525,7 +551,7 @@ function Empty({
             className="ohf-empty-starters"
             style={samples ? undefined : { visibility: "hidden" }}
           >
-            {(samples ?? SAMPLES[surface].slice(0, 3)).map((sample) => (
+            {(samples ?? SAMPLES[sampleMode].slice(0, 3)).map((sample) => (
               <li key={sample}>
                 <button type="button" className="ohf-starter" onClick={() => onStarter(sample)}>
                   <span

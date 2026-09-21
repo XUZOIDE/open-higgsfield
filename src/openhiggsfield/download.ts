@@ -120,5 +120,6 @@ export function fileNameFor(record: RunRecord, index: number): string {
       .replace(/^-+|-+$/g, "")
       .slice(0, 44)
       .replace(/-+$/, "") || "run";
-  return `openhiggsfield-${slug}-${index + 1}.${ext ?? (record.kind === "video" ? "mp4" : "png")}`;
+  const fallback = record.kind === "video" ? "mp4" : record.kind === "html" ? "html" : "png";
+  return `openhiggsfield-${slug}-${index + 1}.${ext ?? fallback}`;
 }

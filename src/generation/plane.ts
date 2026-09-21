@@ -6,7 +6,7 @@ import { useImagePrompt, useVideoPrompt } from "./stores/prompt";
 import { useSettings } from "./stores/settings";
 
 export function assemblePlane(): GenerationPlane {
-  const { model: modelId, surface } = useActive.getState();
+  const { model: modelId, surface, creatorMode } = useActive.getState();
   const model = getModel(modelId);
   const text = (surface === "image" ? useImagePrompt : useVideoPrompt).getState().text;
   const items = (surface === "image" ? useImageMedia : useVideoMedia).getState().items;
@@ -21,6 +21,7 @@ export function assemblePlane(): GenerationPlane {
   }
   return {
     model: model.id,
+    creatorMode,
     prompt: { text },
     media,
     settings: parseSettings(model, useSettings.getState().byModel[model.id] ?? {}),
