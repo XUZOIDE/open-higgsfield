@@ -209,7 +209,9 @@ export function Composer({
     setOverlay(next);
   }
 
-  const attachLabel = tray.allFull ? "Change the inputs" : "Add an input";
+  const attachLabel = tray.items.some((item) => model.roles[item.role])
+    ? "Change the inputs"
+    : "Add an input";
   const settingKey = overlay?.startsWith(SETTING) ? overlay.slice(SETTING.length) : null;
   const generateLabel = batchValue > 1 ? `Generate ${batchValue} results` : "Generate";
   const generateTip = promptEmpty
@@ -293,7 +295,7 @@ export function Composer({
                     type="button"
                     className="ohf-attach ohf-tip ohf-tip--start"
                     data-tip={attachLabel}
-                    disabled={tray.allFull}
+                    disabled={tray.uploading}
                     aria-label={tray.uploading ? "Uploading" : attachLabel}
                     aria-expanded={overlay === ASSETS}
                     aria-haspopup="dialog"

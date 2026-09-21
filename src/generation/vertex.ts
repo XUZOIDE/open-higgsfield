@@ -7,6 +7,7 @@ import { createHash, randomUUID } from "node:crypto";
 import type { GenerationPlane } from "./catalog/types";
 import { getGcloudCredentials } from "./gcloud-auth";
 import { assertGoogleInlineImage } from "./media-limits";
+import { planOmniInput } from "./omni-input";
 import type { GenerationStatus, QueuedGeneration } from "./platform";
 import { imageUsage, omniUsage, veoUsage } from "./pricing";
 
@@ -139,13 +140,17 @@ async function generateImage(
 }
 
 async function submitOmni(plane: GenerationPlane, accessToken: string, projectId: string, userId: string): Promise<string> {
-  const input: Record<string, unknown>[] = [{ type: "text", text: plane.prompt.text }];
-  const first = plane.media.start?.[0];
-  if (first) {
-    const media = await mediaFromUrl(first.url, userId);
+  const plan = planOmniInput(plane.media);
+  const input: Record<string, unknown>[] = [];
+  for (const item of plan.media) {
+    const media = await mediaFromUrl(item.url, userId);
     assertGoogleInlineImage({ byteLength: media.data.byteLength, mimeType: media.mimeType });
     input.push({ type: "image", mime_type: media.mimeType, data: bytesToBase64(media.data) });
   }
+  input.push({ type: "text", text: plane.prompt.text });
+  const generationConfig = plan.task
+    ? { video_config: { task: plan.task } }
+    : undefined;
   const response = await googleJson<Record<string, unknown>>(`${globalBase(projectId)}/interactions`, {
     method: "POST",
     body: {
@@ -161,9 +166,7 @@ async function submitOmni(plane: GenerationPlane, accessToken: string, projectId
           duration: `${Number(plane.settings.duration)}s`,
         },
       ],
-      generation_config: {
-        video_config: { task: first ? "image_to_video" : "text_to_video" },
-      },
+      ...(generationConfig ? { generation_config: generationConfig } : {}),
     },
     timeout: 60_000,
     accessToken,

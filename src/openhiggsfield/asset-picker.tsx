@@ -17,6 +17,7 @@ import {
 import type { UploadRecord } from "./uploads";
 
 type Source = "uploads" | "generations";
+type InputMode = "frames" | "references";
 
 const SOURCES: readonly Source[] = ["uploads", "generations"];
 
@@ -56,14 +57,26 @@ export function AssetPicker({
   items: MediaItem[];
   uploads: UploadRecord[];
   history: RunRecord[];
-  staged: string | null;
+  staged: { id: string; urls: string[] } | null;
   uploading: boolean;
   onUpload: (role: MediaRole) => void;
   onApply: (role: MediaRole, urls: string[]) => void;
   onClose: () => void;
 }) {
   const roles = rolesOf(model);
-  const [role, setRole] = useState<MediaRole>(() => defaultRole(model));
+  const hasInputModes = Boolean(model.roles.start && model.roles.end && model.roles.reference);
+  const initialMode: InputMode = items.some((item) => item.role === "reference")
+    ? "references"
+    : "frames";
+  const initialRole: MediaRole =
+    hasInputModes && initialMode === "references" ? "reference" : defaultRole(model);
+  const [mode, setMode] = useState<InputMode>(initialMode);
+  const [role, setRole] = useState<MediaRole>(initialRole);
+  const activeRoles = hasInputModes
+    ? mode === "references"
+      ? (["reference"] as MediaRole[])
+      : (["start", "end"] as MediaRole[])
+    : roles;
   /* null until the visitor picks a shelf: the panel opens on whichever one
      actually holds something, so someone who has generated all day and
      uploaded nothing does not land on an empty tab. */
@@ -72,7 +85,7 @@ export function AssetPicker({
      already on the plane, so an attached tile opens marked and can be pressed
      off again. An array, not a Set: the order picked is the order attached,
      and a start/end pair is not order-blind. */
-  const [selected, setSelected] = useState<string[]>(() => urlsOf(items, defaultRole(model)));
+  const [selected, setSelected] = useState<string[]>(() => urlsOf(items, initialRole));
   const tabsRef = useRef<HTMLDivElement>(null);
 
   const kind = ROLE_KINDS[role];
@@ -110,7 +123,7 @@ export function AssetPicker({
   /* A file uploaded from inside the panel joins the selection rather than the
      plane: one press still applies the whole set. The ref holds whatever was
      staged before this panel opened, so reopening does not re-select it. */
-  const seen = useRef(staged);
+  const seen = useRef(staged?.id ?? null);
 
   /* A new role is a new library and a new set — a start frame cannot follow the
      switch to audio — so the shelf and the selection are both re-seeded. */
@@ -120,11 +133,24 @@ export function AssetPicker({
     setSelected(urlsOf(items, next));
   }
 
+  function pickMode(next: InputMode) {
+    if (next === mode) return;
+    setMode(next);
+    if (next === "references") {
+      onApply("start", []);
+      onApply("end", []);
+      pickRole("reference");
+      return;
+    }
+    onApply("reference", []);
+    pickRole("start");
+  }
+
   /* Start and end are a pair: attaching the start should land on the empty end
      slot instead of closing, so the second frame is one more click, not a
      reopen plus a confirm. */
   function advanceOrClose(filled: MediaRole) {
-    if (filled === "start" && (model.roles.end ?? 0) > 0) {
+    if (filled === "start" && activeRoles.includes("end") && (model.roles.end ?? 0) > 0) {
       const endUsed = items.filter((item) => item.role === "end").length;
       if (endUsed < (model.roles.end ?? 0)) {
         pickRole("end");
@@ -144,14 +170,17 @@ export function AssetPicker({
   }
 
   useEffect(() => {
-    if (staged === null || staged === seen.current) return;
-    seen.current = staged;
+    if (staged === null || staged.id === seen.current) return;
+    seen.current = staged.id;
+    const incoming = staged.urls.filter((url) => !selected.includes(url));
+    if (incoming.length === 0) return;
     if (max === 1) {
-      setSelected([staged]);
-      commit([staged]);
+      const next = [incoming[0]!];
+      setSelected(next);
+      commit(next);
       return;
     }
-    setSelected((prev) => (prev.includes(staged) ? prev : [...prev, staged]));
+    setSelected((prev) => [...new Set([...prev, ...incoming])].slice(0, max));
   }, [staged]);
 
   function toggle(url: string) {
@@ -244,11 +273,39 @@ export function AssetPicker({
         </button>
       </div>
 
-      {/* Which slot this panel is editing. Models declaring one role need no
-          switch — the footer already names what is being changed. */}
-      {roles.length > 1 && (
+      {hasInputModes && (
+        <div className="ohf-input-mode">
+          <div className="ohf-input-mode-switch" role="group" aria-label="How images guide the video">
+            <button
+              type="button"
+              className="ohf-chip ohf-chip--mode"
+              aria-pressed={mode === "frames"}
+              onClick={() => pickMode("frames")}
+            >
+              Start + end
+            </button>
+            <button
+              type="button"
+              className="ohf-chip ohf-chip--mode"
+              aria-pressed={mode === "references"}
+              onClick={() => pickMode("references")}
+            >
+              Creative references
+            </button>
+          </div>
+          <p className="ohf-input-mode-help">
+            {mode === "frames"
+              ? "Lock the opening and ending shots; Omni creates the connection between them."
+              : "Add up to 5 images for subject and style guidance. Their order is not a timeline."}
+          </p>
+        </div>
+      )}
+
+      {/* Which slot this panel is editing. Models declaring one active role
+          need no switch — the footer already names what is being changed. */}
+      {activeRoles.length > 1 && (
         <div className="ohf-assets-roles" role="group" aria-label="Input slot">
-          {roles.map((entry) => {
+          {activeRoles.map((entry) => {
             const used =
               entry === role ? selected.length : items.filter((item) => item.role === entry).length;
             return (

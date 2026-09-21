@@ -24,12 +24,11 @@ export interface MediaTray {
   items: MediaItem[];
   /** Every file this browser has sent to Blob, newest first. */
   uploads: UploadRecord[];
-  /** The URL of the last file uploaded from the picker. It goes onto the shelf
-      and into the panel's selection, not onto the plane — the panel stages the
-      whole set and one press applies it. */
-  staged: string | null;
+  /** The last upload batch. It goes onto the shelf and into the panel's
+      selection, not onto the plane — the panel stages the whole set and one
+      press applies it. */
+  staged: { id: string; urls: string[] } | null;
   uploading: boolean;
-  allFull: boolean;
   /** Hidden file input; render it once inside the composer. */
   input: ReactNode;
   /** Set the role the next file takes, then open the OS picker. */
@@ -46,7 +45,7 @@ export function useMediaTray(
   const media = useMedia(model);
   const [uploading, setUploading] = useState(false);
   const [uploads, setUploads] = useState<UploadRecord[]>([]);
-  const [staged, setStaged] = useState<string | null>(null);
+  const [staged, setStaged] = useState<{ id: string; urls: string[] } | null>(null);
   const [uploadsLoaded, setUploadsLoaded] = useState(false);
   const roleRef = useRef<MediaRole>("reference");
   const inputRef = useRef<HTMLInputElement>(null);
@@ -74,30 +73,27 @@ export function useMediaTray(
   }, [uploadsLoaded, uploads]);
 
   const roles = rolesOf(model);
-  const counts: Record<string, number> = {};
-  for (const role of roles) {
-    counts[role] = media.items.filter((item) => item.role === role).length;
-  }
-  const allFull = roles.length > 0 && roles.every((role) => counts[role]! >= (model.roles[role] ?? 0));
-
-  async function onFile(file: File | undefined) {
-    if (!file) return;
+  async function onFiles(files: File[]) {
+    if (files.length === 0) return;
     onError(null);
     setUploading(true);
+    const urls: string[] = [];
     try {
-      const uploaded = await uploadMedia(file);
-      /* The file outlives this run: it joins the shelf the picker offers, so a
-         reference used once can be reached again without a second upload. */
-      setStaged(uploaded.url);
-      setUploads((prev) =>
-        rememberUpload(prev, {
-          id: crypto.randomUUID(),
-          url: uploaded.url,
-          kind: kindOfFile(file),
-          name: file.name,
-          createdAt: Date.now(),
-        }),
-      );
+      for (const file of files) {
+        const uploaded = await uploadMedia(file);
+        urls.push(uploaded.url);
+        /* The file outlives this run: it joins the shelf the picker offers, so
+           a reference used once can be reached again without a second upload. */
+        setUploads((prev) =>
+          rememberUpload(prev, {
+            id: crypto.randomUUID(),
+            url: uploaded.url,
+            kind: kindOfFile(file),
+            name: file.name,
+            createdAt: Date.now(),
+          }),
+        );
+      }
     } catch (caught) {
       onError(
         caught instanceof Error
@@ -105,6 +101,10 @@ export function useMediaTray(
           : "Upload failed. Retry, or drop the file and generate from the prompt alone.",
       );
     } finally {
+      /* A later file can fail after earlier files have reached local storage.
+         Keep those successful uploads selected instead of making the visitor
+         hunt for them on the shelf. */
+      if (urls.length > 0) setStaged({ id: crypto.randomUUID(), urls });
       setUploading(false);
     }
   }
@@ -116,6 +116,7 @@ export function useMediaTray(
     if (!element) return;
     roleRef.current = role;
     element.accept = ROLE_ACCEPT[role];
+    element.multiple = (model.roles[role] ?? 0) > 1;
     element.click();
   }
 
@@ -125,9 +126,9 @@ export function useMediaTray(
       type="file"
       hidden
       onChange={(event) => {
-        const file = event.target.files?.[0];
+        const files = Array.from(event.target.files ?? []);
         event.target.value = "";
-        void onFile(file);
+        void onFiles(files);
       }}
     />
   );
@@ -148,7 +149,7 @@ export function useMediaTray(
     }
   }
 
-  return { roles, items: media.items, uploads, staged, uploading, allFull, input, begin, apply };
+  return { roles, items: media.items, uploads, staged, uploading, input, begin, apply };
 }
 
 /** Attached inputs, above the prompt — the frames read before the words do. */

@@ -38,7 +38,10 @@ export const omni11Flash: ModelEntry = {
   id: "gemini-omni-1.1-flash-preview",
   surface: "video",
   label: "Omni 1.1 Flash",
-  roles: { start: 1 },
+  /* Omni accepts either a first/last-frame pair or a set of creative image
+     references. The picker presents those as mutually exclusive intentions so
+     a reference board is never mistaken for a timeline. */
+  roles: { start: 1, end: 1, reference: 5 },
   settings: {
     aspectRatio: { type: "enum", values: ["16:9", "9:16"], default: "16:9" },
     resolution: {
